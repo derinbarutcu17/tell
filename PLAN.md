@@ -1,6 +1,6 @@
 # Tell build plan
 
-Status: Phase 0, Phase 1, and Phase 2 are implemented and verified on 2026-10-26. Phase 2's forced-connection gate is not built: the model decides whether to cite, and its citation rate varies with how specific the work material is. Phase 3 is partly done: the HTML inbox renders saved ideas with research links; keep and reject are still CLI-only. Phase 4 is not started.
+Status: Phase 0, Phase 1, Phase 2, and Phase 3 are implemented and verified on 2026-10-26. Phase 2's forced-connection gate exists as a word-overlap threshold plus weak-host refusal, not as a semantic check. Phase 3 added the dashboard app, keep/reject from the UI, per-idea research, and a provider connection check. Phase 4 (scheduling, delete-a-project command) is not started.
 
 Target: the version described in `IDEA.md`. Capture runs while I work. Small dashboard. Research-backed angles. X and LinkedIn.
 

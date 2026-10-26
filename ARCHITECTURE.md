@@ -36,9 +36,12 @@ StoryCandidate fields:
 
 - `capture.py` reads agent session data. It supports the current OpenCode tables (`session_v2`, `session_message`), Codex-style rollout JSONL, and plain Markdown exports. It pairs each user message with the agent text that followed it, skips child subagent sessions, applies redaction to excerpts and labels, and bounds output.
 - `sources.py` gathers file and Git evidence inside registered paths. It reads Git metadata and eligible text files, not source-code contents.
-- `research.py` turns queries into fetched sources. Providers are tried in order and merged: Hacker News search, arXiv, DuckDuckGo HTML, Wikipedia. Only a page that fetched successfully with usable text becomes evidence.
-- `model.py` calls OpenCode and parses strict JSON. It sends only public evidence fields, checks evidence IDs, rejects unverified citations, and enforces the free-model allowlist.
-- `store.py` owns the SQLite schema and CRUD, including schema migration.
+- `research.py` turns queries into fetched sources. Providers are merged in order: Hacker News search, arXiv, DuckDuckGo HTML, Wikipedia. Only a page that fetched successfully with usable text becomes evidence. `attach_research` fetches one source per idea using that idea's own query and refuses sources below a word-overlap threshold.
+- `model.py` calls OpenCode and parses strict JSON. It sends only public evidence fields, checks evidence IDs, ignores any citation the model supplies, enforces the free-model allowlist, and answers a connection probe.
+- `pipeline.py` is the single scan path shared by the CLI and the dashboard.
+- `server.py` serves the local dashboard on 127.0.0.1 and exposes a small JSON API. Scan runs in one background job with a pollable log.
+- `dashboard_assets/index.html` is the self-contained dashboard UI. No CDN, no framework, no innerHTML with data.
+- `store.py` owns the SQLite schema and CRUD, including schema migration and settings.
 - `render.py` writes one self-contained HTML inbox with escaped text and http/https links only.
 - `cli.py` wires commands and keeps preview local unless `--remote` is present.
 
@@ -52,6 +55,7 @@ StoryCandidate fields:
 - `scan --days N --remote` chooses research queries, fetches sources, asks for up to five ideas, stores them, and renders the inbox.
 - `scan --no-agents` skips agent conversations.
 - `inbox [--out PATH] [--status STATUS]` renders the HTML inbox from saved ideas.
+- `dashboard [--port N] [--no-open]` serves the local dashboard and opens a browser.
 - `stories --status STATUS` lists candidates.
 - `keep ID` and `reject ID` update review state.
 - `draft ID --remote` generates and stores a draft for a kept candidate. It never posts.

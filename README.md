@@ -9,17 +9,21 @@ It reads the agent conversations, Git history, and notes from project folders yo
 From this directory:
 
     ./story-scout source add /path/to/project
+    ./story-scout scan --days 7 --remote
+    ./story-scout dashboard
+
+The dashboard is a local macOS-style window served on `127.0.0.1:8765`. It shows the inbox, keeps or rejects ideas, registers folders, and checks the model provider. Stop it with Ctrl+C.
+
+The same work is available from the command line:
+
     ./story-scout capture --days 7
     ./story-scout scan --days 7
-    ./story-scout scan --days 7 --remote
     ./story-scout inbox
-
-The first scan is a local preview. Only the explicit `--remote` option sends the prepared excerpts to the model. Check `stories` for an idea ID, then keep it before asking for a draft:
-
+    ./story-scout stories
     ./story-scout keep <ID>
     ./story-scout draft <ID> --remote
 
-The draft stays local. There is no publishing, no scheduling, and no background scanning.
+The first scan is a local preview. Only the explicit `--remote` option sends the prepared excerpts to the model. Drafts stay local and are never published.
 
 ## Capture
 
@@ -35,7 +39,9 @@ Only projects you registered are read. Subagent sessions are skipped. Credential
 
 ## Research
 
-A remote scan asks the model for short research queries, then fetches matching sources from public, keyless providers: Hacker News search, arXiv, DuckDuckGo HTML, and Wikipedia. An idea may cite only a URL that was fetched successfully in that run. Anything else is dropped and reported.
+Each idea carries its own `research_query`, written by the model when it proposes the idea. Tell then searches public, keyless providers for that specific idea: Hacker News search, arXiv, DuckDuckGo HTML, and Wikipedia. A source is attached only when the fetched page shares at least two content words with the idea, so a plausible but unrelated article cannot become a citation. Code hosts and Hacker News threads are refused as perspectives. An idea with no match carries no citation and says so.
+
+Only fetched text is quoted. The stored quote is the readable article text, not page navigation.
 
 ## Model access
 
@@ -44,7 +50,7 @@ Free models only, and the default is pinned:
 - `opencode-go/beam-free` (default)
 - `opencode/deepseek-v4.1-flash-free`
 
-The OpenCode CLI and a working OpenCode connection are required. The project does not fall back to a paid model. If a free model hits its usage limit, Tell says so and stops.
+The OpenCode CLI and a working OpenCode connection are required. The project does not fall back to a paid model. The dashboard's Settings view runs a real connection check and explains any failure, including the free-tier usage limit.
 
 ## Data boundaries
 
