@@ -246,29 +246,21 @@ def suggest_queries(
 
 def suggest_stories(
     evidence: Sequence[Evidence],
-    research: Sequence[Evidence] = (),
     *,
     model: str = DEFAULT_MODEL,
     timeout: int = 240,
     warnings: list[str] | None = None,
 ) -> list[StoryCandidate]:
-    """Return up to five evidence-backed ideas, optionally grounded in research."""
+    """Return up to five evidence-backed ideas, each with its own research query."""
     if not evidence:
         return []
     notes = warnings if warnings is not None else []
     known_ids = {item.id for item in evidence}
-    research_by_url = {item.url: item for item in research if item.url}
-    payload = {
-        "work_evidence": _evidence_payload(evidence),
-        "research_evidence": _evidence_payload(research),
-    }
+    payload = {"work_evidence": _evidence_payload(evidence)}
     prompt = (
         "You are the editor for one builder's public writing. Use ONLY the attached "
-        "evidence.\n"
-        "work_evidence comes from that builder's own projects: agent conversations, "
-        "commits, and notes.\n"
-        "research_evidence is fetched from the web. Its `url` field is the only "
-        "permitted citation.\n\n"
+        "work_evidence, which comes from that builder's own projects: agent "
+        "conversations, commits, and notes.\n\n"
         "Return zero to five ideas, best first. Quality beats count. Each idea must:\n"
         "1. Be a specific new angle, not a summary of a document. Name the actual "
         "moment, decision, tension, or change. Quote or closely paraphrase the "
@@ -276,31 +268,37 @@ def suggest_stories(
         "2. Separate `fact` (only what the evidence literally shows) from "
         "`interpretation` (what you infer). Never blur them.\n"
         "3. Set `evidence_ids` to ids that exist in work_evidence.\n"
-        "4. Use `research_urls` only for URLs that appear in research_evidence, and "
-        "only when the connection is concrete. If nothing genuinely fits, return an "
-        "empty list. A forced connection is worse than none.\n"
-        "5. Give one `channel_x` framing under 280 characters and one "
+        "4. Set `research_query` to 2 to 5 plain keywords that would find a real, "
+        "checkable article, essay, or paper giving this idea a wider perspective. "
+        "Name a general concept a stranger would search for, never an internal file "
+        "name, function name, or acronym.\n"
+        "5. Set `research_urls` to an empty list. Tell fetches and verifies sources "
+        "itself and never accepts a citation it did not fetch.\n"
+        "6. Give one `channel_x` framing under 280 characters and one "
         "`channel_linkedin` framing of two to four sentences.\n"
-        "6. Never invent outcomes, numbers, users, quotes, sources, or personal "
+        "7. Never invent outcomes, numbers, users, quotes, sources, or personal "
         "claims. Never say the builder read something. Do not write the finished "
         "post.\n"
-        "7. Prefer evidence whose source is \"agent\": that is the builder's own "
-        "working conversation. Project plans, product documents, and handoff notes "
-        "are supporting context only. An idea that mainly restates a planning or "
-        "product document is a summary, not a story. Drop it.\n"
-        "8. `fact` must describe something that happened: a bug, a change, a "
+        "8. Prefer evidence whose source is \"agent\": that is the builder's own "
+        "working conversation. Project plans and product documents are supporting "
+        "context only. An idea that mainly restates a planning document is a summary, "
+        "not a story. Drop it.\n"
+        "9. `fact` must describe something that happened: a bug, a change, a "
         "measurement, a reaction. A statement of intent or a plan is not a fact.\n"
         "Return no idea when the evidence is weak.\n"
         'Return only strict JSON: {"candidates":[{"title":"...","angle":"...",'
         '"rationale":"...","audience":"...","fact":"...","interpretation":"...",'
-        '"evidence_ids":["..."],"research_urls":[],"channel_x":"...",'
-        '"channel_linkedin":"...","confidence":0.0}]}'
+        '"evidence_ids":["..."],"research_query":"...","research_urls":[],'
+        '"channel_x":"...","channel_linkedin":"...","confidence":0.0}]}'
     )
     response = _strip_fence(_run_opencode(payload, prompt, model=model, timeout=timeout))
     try:
         document = json.loads(response)
-    except json.JSONDecodeError as exc:
-        raise ValueError("OpenCode returned invalid JSON for story candidates.") from exc
+    except json.JSONDecodeError:
+        try:
+            document = _load_json_object(response)
+        except ValueError as exc:
+            raise ValueError("OpenCode returned invalid JSON for story candidates.") from exc
     if not isinstance(document, dict) or not isinstance(document.get("candidates"), list):
         raise ValueError("OpenCode story response must contain a candidates list.")
     rows = document["candidates"]
@@ -326,24 +324,11 @@ def suggest_stories(
             raise ValueError("Candidate confidence must be a number from 0 to 1.")
         if not 0 <= float(confidence) <= 1:
             raise ValueError("Candidate confidence must be a number from 0 to 1.")
-
-        claimed_urls = row.get("research_urls")
-        if claimed_urls is None:
-            claimed_urls = []
-        if not isinstance(claimed_urls, list) or not all(isinstance(url, str) for url in claimed_urls):
-            raise ValueError("Candidate research_urls must be a list of URLs.")
-        verified: list[str] = []
-        invented: list[str] = []
-        for url in dict.fromkeys(url.strip() for url in claimed_urls):
-            if url and url in research_by_url:
-                verified.append(url)
-            elif url:
-                invented.append(url)
-        if invented:
+        claim = row.get("research_urls")
+        if isinstance(claim, list) and any(url for url in claim if isinstance(url, str)):
             notes.append(
-                f"dropped idea {title!r}: it cited {len(invented)} source(s) that were not fetched"
+                f"ignored model-supplied citation(s) for {title!r}: Tell only cites what it fetched"
             )
-            continue
 
         result.append(
             StoryCandidate(
@@ -355,12 +340,30 @@ def suggest_stories(
                 confidence=float(confidence),
                 fact=_optional_text(row, "fact", 400),
                 interpretation=_optional_text(row, "interpretation", 400),
-                research_urls=tuple(verified),
+                research_urls=(),
                 channel_x=_optional_text(row, "channel_x", 400),
                 channel_linkedin=_optional_text(row, "channel_linkedin", 900),
+                research_query=_optional_text(row, "research_query", 120),
             )
         )
     return result
+
+
+def check_connection(model: str = DEFAULT_MODEL, *, timeout: int = 60) -> tuple[bool, str]:
+    """Send one tiny prompt and report whether the provider answers."""
+    if model not in FREE_MODELS:
+        return False, "Only free models are allowed. Pick one from the list."
+    try:
+        reply = _run_opencode(
+            {"probe": "connection check"},
+            "Reply with the single word ok. Do not add anything else.",
+            model=model,
+            timeout=timeout,
+        )
+    except (RuntimeError, ValueError) as error:
+        return False, str(error)
+    snippet = " ".join(reply.split())[:80]
+    return True, f"Connected to {model}. Reply: {snippet!r}"
 
 
 def draft_story(

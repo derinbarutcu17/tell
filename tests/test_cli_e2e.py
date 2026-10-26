@@ -31,9 +31,7 @@ with open(os.environ["STORY_SCOUT_E2E_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps({"payload_path": payload_path}) + "\n")
 
 prompt = args[-1]
-if "short web search queries" in prompt:
-    response = json.dumps({"queries": []})
-elif "Draft one concise social post" in prompt:
+if "Draft one concise social post" in prompt:
     response = "A small UX change taught me to reduce the first decision."
 else:
     response = json.dumps({"candidates": [{
@@ -105,7 +103,7 @@ class CliEndToEndTests(unittest.TestCase):
         self.assertIn("Nothing was sent", preview)
         self.assertFalse(self.call_log.exists(), "local preview must not invoke OpenCode")
 
-        candidates = self.require_success("scan", "--days", "7", "--remote")
+        candidates = self.require_success("scan", "--days", "7", "--remote", "--no-research")
         self.assertIn("Reduce the first decision", candidates)
         stories = self.require_success("stories")
         self.assertIn("Reduce the first decision", stories)
@@ -116,7 +114,7 @@ class CliEndToEndTests(unittest.TestCase):
         self.assertIn("Draft saved locally", draft)
 
         calls = [json.loads(line) for line in self.call_log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 2)
         self.assertTrue(all(not Path(call["payload_path"]).exists() for call in calls))
 
 

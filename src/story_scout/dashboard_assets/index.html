@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%230a84ff'/%3E%3C/svg%3E">
+<title>Tell</title>
+<style>
+  *,
+  *::before,
+  *::after { box-sizing: border-box; }
+
+  [hidden] { display: none !important; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    padding: 16px;
+    overflow: hidden;
+    background: #ececee;
+    color: #1b1b1f;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input, select { font-family: inherit; }
+
+  :focus-visible {
+    outline: 2px solid #0a84ff;
+    outline-offset: 1px;
+  }
+
+  .window {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 32px);
+    height: calc(100dvh - 32px);
+    overflow: hidden;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .16), 0 0 0 .5px rgba(0, 0, 0, .12);
+  }
+
+  /* ---------- titlebar ---------- */
+
+  .titlebar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    flex: 0 0 44px;
+    height: 44px;
+    padding: 0 14px;
+    background: #f7f7f8;
+    user-select: none;
+  }
+
+  .lights {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  .dot.close { background: #ff5f57; }
+  .dot.min { background: #febc2e; }
+  .dot.zoom { background: #28c840; }
+
+  .appname {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6e6e73;
+    letter-spacing: .01em;
+  }
+
+  .titlebar-tail { height: 12px; }
+
+  /* ---------- shell ---------- */
+
+  .shell {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .sidebar {
+    display: flex;
+    flex: 0 0 200px;
+    flex-direction: column;
+    min-height: 0;
+    padding: 12px 10px;
+    background: #f2f2f4;
+    border-right: 1px solid #e3e3e6;
+  }
+
+  .section-label {
+    padding: 2px 10px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #8a8a8e;
+  }
+
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .nav-row {
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #1b1b1f;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .nav-row:hover { background: #e7e7ea; }
+  .nav-row.is-on { background: #dcdce1; font-weight: 500; }
+
+  .sidebar-foot {
+    margin-top: auto;
+    padding-top: 12px;
+  }
+
+  .sidebar-note {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.3;
+    color: #8a8a8e;
+  }
+
+  /* ---------- buttons ---------- */
+
+  .btn {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #f2f2f4;
+    color: #3c3c43;
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn:hover { background: #e7e7ea; }
+
+  .btn.primary {
+    background: #0a84ff;
+    border-color: #0a84ff;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .btn.primary:hover { background: #0070e0; border-color: #0070e0; }
+
+  .btn.block { display: block; width: 100%; }
+
+  .btn:disabled {
+    opacity: .55;
+    cursor: default;
+  }
+
+  /* Keep disabled buttons legible: opacity alone drops white-on-blue to ~2:1. */
+  .btn.primary:disabled {
+    opacity: 1;
+    background: #2f6fb5;
+  }
+
+  .btn-link {
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #d70015;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .btn-link:hover { background: #fff0f1; }
+
+  /* ---------- content ---------- */
+
+  .content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: #f7f7f8;
+  }
+
+  .toolbar {
+    display: flex;
+    flex: 0 0 52px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 52px;
+    padding: 0 20px;
+    background: #fff;
+    border-bottom: 1px solid #ececee;
+  }
+
+  .toolbar h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .chip {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #f2f2f4;
+    color: #6e6e73;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .segment {
+    display: flex;
+    padding: 2px;
+    border-radius: 6px;
+    background: #f2f2f4;
+  }
+
+  .segbtn {
+    padding: 3px 9px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #6e6e73;
+    font-size: 11px;
+    line-height: 1.4;
+    cursor: pointer;
+  }
+
+  .segbtn:hover { color: #1b1b1f; }
+
+  .segbtn.is-on {
+    background: #fff;
+    color: #1b1b1f;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+  }
+
+  .progress[hidden] { display: none; }
+
+  .progress {
+    flex: 0 0 2px;
+    height: 2px;
+    overflow: hidden;
+    background: #e9e9ec;
+  }
+
+  .progress i {
+    display: block;
+    width: 30%;
+    height: 100%;
+    border-radius: 2px;
+    background: #0a84ff;
+    animation: indeterminate 1.1s ease-in-out infinite;
+  }
+
+  @keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .progress i { animation-duration: 2.6s; }
+  }
+
+  .error {
+    flex: 0 0 auto;
+    padding: 8px 20px;
+    background: #fff5f5;
+    border-bottom: 1px solid #f5d6d6;
+    color: #d70015;
+    font-size: 12px;
+  }
+
+  .log {
+    flex: 0 0 auto;
+    max-height: 140px;
+    overflow: auto;
+    padding: 8px 10px;
+    background: #f7f7f8;
+    border-bottom: 1px solid #ececee;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #3c3c43;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .view {
+    flex: 1;
+    min-height: 0;
+    padding: 18px 20px 24px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* ---------- idea cards ---------- */
+
+  .idea {
+    padding: 18px;
+    border: 1px solid #e3e3e6;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  }
+
+  .idea + .idea { margin-top: 12px; }
+
+  .idea code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11.5px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, .055);
+    color: #2b2b31;
+  }
+
+  .idea.is-rejected { opacity: .6; }
+
+  .idea-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .idea-idx {
+    margin-top: 3px;
+    color: #a1a1a6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11px;
+  }
+
+  .idea-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    color: #1b1b1f;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .conf {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #eef6ee;
+    color: #227a37;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .idea-angle {
+    margin: 6px 0 0;
+    color: #3c3c43;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .split,
+  .frames {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .blk {
+    min-width: 0;
+    padding: 12px;
+    border-radius: 8px;
+  }
+
+  .blk-fact {
+    background: #f7f7f8;
+    border: 1px solid #e6e6e9;
+  }
+
+  .blk-interp {
+    background: #fff8e8;
+    border: 1px solid #f2e2bd;
+  }
+
+  .blk-label {
+    margin-bottom: 5px;
+    color: #8a8a8e;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .blk-interp .blk-label { color: #8a6417; }
+
+  .blk-body {
+    margin: 0;
+    color: #3c3c43;
+    font-size: 13px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .research {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .research-label {
+    margin-right: 2px;
+    color: #8a8a8e;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .research-empty {
+    color: #8a8a8e;
+    font-size: 11px;
+  }
+
+  .url-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: #eef4ff;
+    color: #0a84ff;
+    font-size: 11px;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+
+  .url-chip:hover { background: #e2edff; text-decoration: underline; }
+
+  .url-chip .arrow { font-size: 10px; }
+
+  .frame {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #ececec;
+    border-radius: 8px;
+    background: #fafafa;
+  }
+
+  .frame-label {
+    margin-bottom: 4px;
+    color: #8a8a8e;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .frame-body {
+    margin: 0;
+    color: #3c3c43;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .idea-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .evidence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .ev-chip {
+    padding: 2px 6px;
+    border: 1px solid #e6e6e9;
+    border-radius: 4px;
+    background: #f7f7f8;
+    color: #6b6b70;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .ev-none { color: #a1a1a6; font-size: 10px; }
+
+  .actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .btn.keep { background: #0a84ff; color: #fff; }
+  .btn.keep:hover { background: #0070e0; }
+  .btn.keep.is-on { background: #227a37; }
+  .btn.keep.is-on:hover { background: #1c6730; }
+
+  .btn.reject.is-on {
+    background: #e2e2e7;
+    border-color: #d4d4da;
+    color: #1b1b1f;
+  }
+
+  /* ---------- empty states ---------- */
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 100%;
+    padding: 48px 20px;
+    color: #8a8a8e;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .empty p { margin: 0; }
+
+  /* ---------- sources ---------- */
+
+  .sources-top {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .text-input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid #dcdce1;
+    border-radius: 6px;
+    background: #fff;
+    color: #1b1b1f;
+    font-size: 12px;
+  }
+
+  .text-input::placeholder { color: #a1a1a6; }
+
+  .text-input:focus {
+    outline: none;
+    border-color: #0a84ff;
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, .15);
+  }
+
+  .list {
+    border: 1px solid #e3e3e6;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .list-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .list-row + .list-row { border-top: 1px solid #ececee; }
+
+  .list-path {
+    flex: 1;
+    min-width: 0;
+    color: #3c3c43;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .list-empty {
+    padding: 24px 12px;
+    color: #8a8a8e;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* ---------- settings ---------- */
+
+  .group {
+    max-width: 560px;
+    border: 1px solid #e3e3e6;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .group-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 14px;
+  }
+
+  .group-row + .group-row { border-top: 1px solid #ececee; }
+
+  .row-label {
+    color: #1b1b1f;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .select {
+    max-width: 300px;
+    padding: 5px 8px;
+    border: 1px solid #dcdce1;
+    border-radius: 6px;
+    background: #fff;
+    color: #1b1b1f;
+    font-size: 12px;
+    appearance: auto;
+    cursor: pointer;
+  }
+
+  .test-result {
+    flex: 1;
+    min-width: 0;
+    color: #8a8a8e;
+    font-size: 12px;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .test-result.ok { color: #227a37; }
+  .test-result.bad { color: #d70015; }
+
+  .meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 14px;
+    color: #8a8a8e;
+    font-size: 11px;
+  }
+
+  .meta-value {
+    color: #6b6b70;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  .note {
+    margin: 8px 0 0;
+    color: #8a8a8e;
+    font-size: 11px;
+  }
+
+  /* ---------- responsive ---------- */
+
+  @media (max-width: 820px) {
+    body { padding: 0; }
+    .window {
+      height: 100vh;
+      height: 100dvh;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .sidebar { flex-basis: 176px; }
+    .view { padding: 16px 16px 20px; }
+    .toolbar { padding: 0 16px; }
+  }
+
+  @media (max-width: 700px) {
+    .split, .frames { grid-template-columns: 1fr; }
+    .sidebar { flex-basis: 150px; }
+    .toolbar-right { gap: 6px; }
+    .chip { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="window">
+  <header class="titlebar">
+    <div class="lights" aria-hidden="true">
+      <span class="dot close"></span>
+      <span class="dot min"></span>
+      <span class="dot zoom"></span>
+    </div>
+    <div class="appname">Tell</div>
+    <div class="titlebar-tail"></div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="section-label">Tell</div>
+      <nav class="nav" id="nav" aria-label="Views">
+        <button type="button" class="nav-row is-on" data-view="inbox" aria-current="page">Inbox</button>
+        <button type="button" class="nav-row" data-view="sources">Sources</button>
+        <button type="button" class="nav-row" data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <button type="button" class="btn primary block" id="scanBtn">Scan now</button>
+        <p class="sidebar-note">Reads your registered folders and agents</p>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="toolbar">
+        <h1 id="viewTitle">Inbox</h1>
+        <div class="toolbar-right">
+          <span class="chip" id="countChip">&mdash;</span>
+          <div class="segment" id="segment" role="group" aria-label="Filter ideas">
+            <button type="button" class="segbtn is-on" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="segbtn" data-filter="new" aria-pressed="false">New</button>
+            <button type="button" class="segbtn" data-filter="kept" aria-pressed="false">Kept</button>
+            <button type="button" class="segbtn" data-filter="rejected" aria-pressed="false">Rejected</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="progress" id="progress" hidden><i></i></div>
+      <div class="error" id="errorLine" role="alert" hidden></div>
+      <div class="log" id="logBox" hidden><div id="logLines"></div></div>
+
+      <div class="view" id="view"></div>
+    </main>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding:16px;font-size:13px">Tell needs JavaScript enabled to show the inbox.</p>
+</noscript>
+
+<script>
+(function () {
+  "use strict";
+
+  var app = {
+    view: "inbox",
+    filter: "all",
+    data: null,
+    scanning: false,
+    timer: null,
+    logJobId: null,
+    logCount: 0,
+    logVisible: false,
+    inFlight: false
+  };
+
+  var elView = document.getElementById("view");
+  var elTitle = document.getElementById("viewTitle");
+  var elChip = document.getElementById("countChip");
+  var elSegment = document.getElementById("segment");
+  var elError = document.getElementById("errorLine");
+  var elProgress = document.getElementById("progress");
+  var elLog = document.getElementById("logBox");
+  var elLogLines = document.getElementById("logLines");
+  var elScan = document.getElementById("scanBtn");
+
+  /* ---------- helpers ---------- */
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) appendRichText(node, String(text));
+    return node;
+  }
+
+  // Renders `inline code` as a <code> element. Everything else stays a text
+  // node, so no API value is ever interpreted as markup.
+  function appendRichText(node, value) {
+    var parts = String(value).split("`");
+    for (var i = 0; i < parts.length; i += 1) {
+      var part = parts[i];
+      if (!part) continue;
+      if (i % 2 === 1) {
+        var code = document.createElement("code");
+        code.textContent = part;
+        node.appendChild(code);
+      } else {
+        node.appendChild(document.createTextNode(part));
+      }
+    }
+  }
+
+  function str(value) {
+    if (typeof value === "string") return value;
+    if (value === undefined || value === null) return "";
+    return String(value);
+  }
+
+  function isHttpUrl(value) {
+    if (typeof value !== "string" || !/^https?:\/\//i.test(value)) return false;
+    try {
+      var parsed = new URL(value);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function visibleUrl(value) {
+    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  }
+
+  function confidencePct(value) {
+    if (value === null || value === undefined || value === "") return null;
+    var n = Number(value);
+    if (!isFinite(n)) return null;
+    if (n <= 1) n = n * 100;
+    return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  function normalize(data) {
+    var out = data && typeof data === "object" ? data : {};
+    if (!Array.isArray(out.ideas)) out.ideas = [];
+    if (!Array.isArray(out.sources)) out.sources = [];
+    if (!out.settings || typeof out.settings !== "object") out.settings = {};
+    if (!Array.isArray(out.settings.models)) out.settings.models = [];
+    if (typeof out.settings.model !== "string") out.settings.model = "";
+    if (!out.job || typeof out.job !== "object") out.job = null;
+    return out;
+  }
+
+  function api(method, path, body) {
+    var options = { method: method, headers: {} };
+    if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    return fetch(path, options).catch(function () {
+      throw new Error("Cannot reach the Tell server.");
+    }).then(function (res) {
+      return res.text().then(function (raw) {
+        var data = null;
+        if (raw) {
+          try { data = JSON.parse(raw); } catch (err) { data = null; }
+        }
+        if (!res.ok) {
+          var message = data && data.error ? str(data.error) : "Request failed (" + res.status + ").";
+          throw new Error(message);
+        }
+        if (data === null && raw) return { message: raw };
+        return data || {};
+      });
+    });
+  }
+
+  function showError(message) {
+    elError.textContent = message;
+    elError.hidden = false;
+  }
+
+  function clearError() {
+    elError.textContent = "";
+    elError.hidden = true;
+  }
+
+  function updateLogVisibility() {
+    var running = app.scanning || !!(app.data && app.data.job && app.data.job.state === "running");
+    elLog.hidden = !(app.logVisible && (running || app.view === "inbox"));
+    elProgress.hidden = !running;
+  }
+
+  /* ---------- job handling ---------- */
+
+  function applyJob(job) {
+    if (!job || typeof job !== "object") {
+      app.scanning = false;
+      updateLogVisibility();
+      return;
+    }
+
+    var jobId = str(job.id);
+    if (jobId !== app.logJobId) {
+      app.logJobId = jobId;
+      app.logCount = 0;
+      elLogLines.textContent = "";
+    }
+
+    var lines = Array.isArray(job.log) ? job.log : [];
+    if (lines.length < app.logCount) {
+      elLogLines.textContent = "";
+      app.logCount = 0;
+    }
+    for (var i = app.logCount; i < lines.length; i += 1) {
+      elLogLines.appendChild(el("div", "log-line", str(lines[i])));
+    }
+    if (lines.length) {
+      app.logCount = lines.length;
+      app.logVisible = true;
+      elLog.scrollTop = elLog.scrollHeight;
+    }
+
+    if (job.error) showError(str(job.error));
+    updateLogVisibility();
+  }
+
+  function stopPolling() {
+    if (app.timer !== null) {
+      clearInterval(app.timer);
+      app.timer = null;
+    }
+  }
+
+  function startPolling() {
+    if (app.timer !== null) return;
+    app.timer = setInterval(pollJob, 1500);
+  }
+
+  function pollJob() {
+    if (app.inFlight) return;
+    app.inFlight = true;
+    return api("GET", "/api/job").then(function (data) {
+      var job = data && data.job ? data.job : null;
+      applyJob(job);
+      if (job && job.state === "running") {
+        app.scanning = true;
+        elScan.textContent = "Scanning\u2026";
+        elScan.disabled = true;
+        startPolling();
+        updateLogVisibility();
+      } else {
+        stopPolling();
+        app.scanning = false;
+        elScan.textContent = "Scan now";
+        elScan.disabled = false;
+        updateLogVisibility();
+        return refresh();
+      }
+    }).catch(function (err) {
+      stopPolling();
+      app.scanning = false;
+      elScan.textContent = "Scan now";
+      elScan.disabled = false;
+      updateLogVisibility();
+      showError(err.message);
+    }).then(function () {
+      app.inFlight = false;
+    }, function () {
+      app.inFlight = false;
+    });
+  }
+
+  function runScan() {
+    if (app.scanning) return;
+    clearError();
+    app.scanning = true;
+    app.logVisible = true;
+    app.logJobId = null;
+    app.logCount = 0;
+    elLogLines.textContent = "";
+    elLog.hidden = false;
+    elScan.textContent = "Scanning\u2026";
+    elScan.disabled = true;
+    updateLogVisibility();
+
+    api("POST", "/api/scan", { days: 7, remote: true }).then(function (data) {
+      if (data && data.job) applyJob(data.job);
+      return pollJob();
+    }).then(function () {
+      startPolling();
+    }).catch(function (err) {
+      app.scanning = false;
+      elScan.textContent = "Scan now";
+      elScan.disabled = false;
+      updateLogVisibility();
+      showError(err.message);
+    });
+  }
+
+  /* ---------- data ---------- */
+
+  function refresh() {
+    return api("GET", "/api/state").then(function (data) {
+      app.data = normalize(data);
+      render();
+      if (app.scanning && app.data.job && app.data.job.state === "running") {
+        applyJob(app.data.job);
+        updateLogVisibility();
+        if (app.timer === null) {
+          pollJob();
+          startPolling();
+        }
+      }
+    }).catch(function (err) {
+      showError(err.message);
+    });
+  }
+
+  function setIdeaStatus(id, status, keepBtn, rejectBtn) {
+    keepBtn.disabled = true;
+    rejectBtn.disabled = true;
+    clearError();
+    api("POST", "/api/ideas/" + encodeURIComponent(str(id)) + "/status", { status: status })
+      .then(function () {
+        return refresh();
+      })
+      .catch(function (err) {
+        keepBtn.disabled = false;
+        rejectBtn.disabled = false;
+        showError(err.message);
+      });
+  }
+
+  /* ---------- render ---------- */
+
+  function render() {
+    elTitle.textContent = app.view === "inbox" ? "Inbox" : app.view === "sources" ? "Sources" : "Settings";
+    elSegment.hidden = app.view !== "inbox";
+
+    Array.prototype.forEach.call(document.querySelectorAll(".nav-row"), function (row) {
+      var on = row.getAttribute("data-view") === app.view;
+      row.classList.toggle("is-on", on);
+      if (on) row.setAttribute("aria-current", "page");
+      else row.removeAttribute("aria-current");
+    });
+
+    elView.textContent = "";
+    if (app.view === "inbox") renderInbox();
+    else if (app.view === "sources") renderSources();
+    else renderSettings();
+    updateLogVisibility();
+  }
+
+  function setChip(text, visible) {
+    elChip.textContent = text;
+    elChip.hidden = !visible;
+  }
+
+  function emptyState(message, withScan) {
+    var wrap = el("div", "empty");
+    wrap.appendChild(el("p", null, message));
+    if (withScan) {
+      var btn = el("button", "btn primary", "Scan now");
+      btn.type = "button";
+      btn.addEventListener("click", runScan);
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
+
+  function renderInbox() {
+    var ideas = app.data ? app.data.ideas : [];
+    var filtered = [];
+    ideas.forEach(function (idea, index) {
+      var status = idea && typeof idea.status === "string" ? idea.status : "new";
+      if (app.filter === "all" || status === app.filter) filtered.push({ idea: idea, index: index });
+    });
+
+    setChip(filtered.length + (filtered.length === 1 ? " idea" : " ideas"), true);
+
+    if (!filtered.length) {
+      var message = ideas.length
+        ? "No ideas match this filter."
+        : "Nothing here yet. Run a scan to fill the inbox.";
+      elView.appendChild(emptyState(message, ideas.length === 0));
+      return;
+    }
+
+    filtered.forEach(function (entry) {
+      elView.appendChild(buildIdea(entry.idea, entry.index));
+    });
+  }
+
+  function buildBlock(cls, label, body) {
+    var block = el("div", "blk " + cls);
+    block.appendChild(el("div", "blk-label", label));
+    block.appendChild(el("p", "blk-body", body || "\u2014"));
+    return block;
+  }
+
+  function buildIdea(idea, index) {
+    idea = idea && typeof idea === "object" ? idea : {};
+    var status = idea.status === "kept" || idea.status === "rejected" ? idea.status : "new";
+
+    var card = el("article", "idea" + (status === "rejected" ? " is-rejected" : ""));
+    if (idea.id !== undefined && idea.id !== null) card.setAttribute("data-id", str(idea.id));
+
+    var head = el("div", "idea-head");
+    head.appendChild(el("span", "idea-idx", String(index + 1).padStart(2, "0")));
+    head.appendChild(el("h2", "idea-title", str(idea.title) || "Untitled idea"));
+    var pct = confidencePct(idea.confidence);
+    if (pct !== null) {
+      var pill = el("span", "conf", pct + "%");
+      pill.title = "Confidence";
+      head.appendChild(pill);
+    }
+    card.appendChild(head);
+
+    if (str(idea.angle)) card.appendChild(el("p", "idea-angle", str(idea.angle)));
+
+    var split = el("div", "split");
+    split.appendChild(buildBlock("blk-fact", "Fact from your work", str(idea.fact)));
+    split.appendChild(buildBlock("blk-interp", "Interpretation", str(idea.interpretation)));
+    card.appendChild(split);
+
+    var research = el("div", "research");
+    research.appendChild(el("span", "research-label", "Perspective"));
+    var urls = (Array.isArray(idea.research_urls) ? idea.research_urls : []).filter(isHttpUrl);
+    if (!urls.length) {
+      research.appendChild(el("span", "research-empty", "No research attached"));
+    } else {
+      urls.forEach(function (url) {
+        var link = el("a", "url-chip");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.title = url;
+        link.appendChild(document.createTextNode(visibleUrl(url)));
+        link.appendChild(el("span", "arrow", "\u2197"));
+        research.appendChild(link);
+      });
+    }
+    card.appendChild(research);
+
+    var channels = idea.channels && typeof idea.channels === "object" ? idea.channels : {};
+    var frames = el("div", "frames");
+    frames.appendChild(buildFrame("X", str(channels.x)));
+    frames.appendChild(buildFrame("LinkedIn", str(channels.linkedin)));
+    card.appendChild(frames);
+
+    var foot = el("div", "idea-foot");
+    var evidence = el("div", "evidence");
+    var ids = Array.isArray(idea.work_evidence_ids) ? idea.work_evidence_ids : [];
+    if (!ids.length) {
+      evidence.appendChild(el("span", "ev-none", "No evidence"));
+    } else {
+      ids.forEach(function (id) {
+        evidence.appendChild(el("span", "ev-chip", str(id)));
+      });
+    }
+    foot.appendChild(evidence);
+
+    var actions = el("div", "actions");
+    var keep = el("button", "btn keep" + (status === "kept" ? " is-on" : ""), status === "kept" ? "\u2713 Keep" : "Keep");
+    keep.type = "button";
+    var reject = el("button", "btn reject" + (status === "rejected" ? " is-on" : ""), "Reject");
+    reject.type = "button";
+
+    keep.addEventListener("click", function () {
+      setIdeaStatus(idea.id, "kept", keep, reject);
+    });
+    reject.addEventListener("click", function () {
+      setIdeaStatus(idea.id, "rejected", keep, reject);
+    });
+
+    actions.appendChild(keep);
+    actions.appendChild(reject);
+    foot.appendChild(actions);
+    card.appendChild(foot);
+
+    return card;
+  }
+
+  function buildFrame(label, body) {
+    var frame = el("div", "frame");
+    frame.appendChild(el("div", "frame-label", label));
+    frame.appendChild(el("p", "frame-body", body || "\u2014"));
+    return frame;
+  }
+
+  function renderSources() {
+    var sources = app.data ? app.data.sources : [];
+    setChip(sources.length + (sources.length === 1 ? " folder" : " folders"), true);
+
+    var form = el("form", "sources-top");
+    var input = el("input", "text-input");
+    input.type = "text";
+    input.placeholder = "/Users/you/code";
+    input.setAttribute("aria-label", "Folder path");
+    var add = el("button", "btn primary", "Add folder");
+    add.type = "submit";
+    add.disabled = true;
+
+    input.addEventListener("input", function () {
+      add.disabled = input.value.trim() === "";
+    });
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var path = input.value.trim();
+      if (!path) return;
+      add.disabled = true;
+      clearError();
+      api("POST", "/api/sources", { path: path }).then(function () {
+        return refresh();
+      }).catch(function (err) {
+        add.disabled = false;
+        showError(err.message);
+      });
+    });
+
+    form.appendChild(input);
+    form.appendChild(add);
+    elView.appendChild(form);
+
+    var list = el("div", "list");
+    if (!sources.length) {
+      list.appendChild(el("div", "list-empty", "No folders registered yet."));
+      elView.appendChild(list);
+      return;
+    }
+
+    sources.forEach(function (source) {
+      var row = el("div", "list-row");
+      row.appendChild(el("span", "list-path", str(source.path)));
+      var remove = el("button", "btn-link", "Remove");
+      remove.type = "button";
+      remove.addEventListener("click", function () {
+        remove.disabled = true;
+        clearError();
+        api("DELETE", "/api/sources/" + encodeURIComponent(str(source.id)))
+          .then(function () {
+            return refresh();
+          })
+          .catch(function (err) {
+            remove.disabled = false;
+            showError(err.message);
+          });
+      });
+      row.appendChild(remove);
+      list.appendChild(row);
+    });
+    elView.appendChild(list);
+  }
+
+  function renderSettings() {
+    setChip("", false);
+    var settings = app.data ? app.data.settings : { model: "", models: [] };
+    var models = settings.models.slice();
+    if (settings.model && models.indexOf(settings.model) === -1) models.unshift(settings.model);
+
+    var group = el("div", "group");
+
+    var modelRow = el("div", "group-row");
+    modelRow.appendChild(el("span", "row-label", "Model provider"));
+    var select = el("select", "select");
+    select.setAttribute("aria-label", "Model provider");
+    models.forEach(function (model) {
+      var option = el("option", null, model);
+      option.value = model;
+      if (model === settings.model) option.selected = true;
+      select.appendChild(option);
+    });
+    select.addEventListener("change", function () {
+      var chosen = select.value;
+      clearError();
+      api("POST", "/api/settings", { model: chosen }).then(function () {
+        if (app.data && app.data.settings) app.data.settings.model = chosen;
+      }).catch(function (err) {
+        if (app.data && app.data.settings) select.value = app.data.settings.model;
+        showError(err.message);
+      });
+    });
+    modelRow.appendChild(select);
+    group.appendChild(modelRow);
+
+    var testRow = el("div", "group-row");
+    var test = el("button", "btn", "Test connection");
+    test.type = "button";
+    var result = el("span", "test-result", "");
+    test.addEventListener("click", function () {
+      if (!select.value) {
+        result.className = "test-result bad";
+        result.textContent = "Select a model first.";
+        return;
+      }
+      test.disabled = true;
+      test.textContent = "Testing\u2026";
+      result.className = "test-result";
+      result.textContent = "";
+      clearError();
+      api("POST", "/api/test-connection", { model: select.value }).then(function (data) {
+        result.className = "test-result ok";
+        result.textContent = data && data.message ? str(data.message) : "Connection OK.";
+      }).catch(function (err) {
+        result.className = "test-result bad";
+        result.textContent = err.message;
+      }).then(function () {
+        test.disabled = false;
+        test.textContent = "Test connection";
+      });
+    });
+    testRow.appendChild(test);
+    testRow.appendChild(result);
+    group.appendChild(testRow);
+    elView.appendChild(group);
+
+    var base = el("div", "meta-line");
+    base.appendChild(el("span", null, "Base URL"));
+    base.appendChild(el("span", "meta-value", settings.base_url ? str(settings.base_url) : window.location.origin));
+    elView.appendChild(base);
+
+    var note = el("p", "note", "Free models only. Nothing is published.");
+    elView.appendChild(note);
+  }
+
+  /* ---------- wiring ---------- */
+
+  document.getElementById("nav").addEventListener("click", function (event) {
+    var row = event.target.closest(".nav-row");
+    if (!row) return;
+    var view = row.getAttribute("data-view");
+    if (view === app.view) return;
+    app.view = view;
+    clearError();
+    render();
+  });
+
+  elSegment.addEventListener("click", function (event) {
+    var btn = event.target.closest(".segbtn");
+    if (!btn) return;
+    app.filter = btn.getAttribute("data-filter");
+    Array.prototype.forEach.call(elSegment.querySelectorAll(".segbtn"), function (other) {
+      var on = other === btn;
+      other.classList.toggle("is-on", on);
+      other.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    render();
+  });
+
+  elScan.addEventListener("click", runScan);
+
+  /* ---------- boot ---------- */
+
+  api("GET", "/api/state").then(function (data) {
+    app.data = normalize(data);
+    render();
+    var job = app.data.job;
+    if (job && job.state === "running") {
+      applyJob(job);
+      app.scanning = true;
+      elScan.textContent = "Scanning\u2026";
+      elScan.disabled = true;
+      updateLogVisibility();
+      pollJob();
+      startPolling();
+    } else {
+      updateLogVisibility();
+    }
+  }).catch(function (err) {
+    showError(err.message);
+    app.data = normalize({});
+    render();
+  });
+}());
+</script>
+</body>
+</html>

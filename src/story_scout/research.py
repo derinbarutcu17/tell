@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import re
 import socket
 import xml.etree.ElementTree as ET
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from urllib.error import HTTPError
 from urllib.parse import (
@@ -23,7 +24,7 @@ from urllib.parse import (
 )
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from story_scout.models import Evidence
+from story_scout.models import Evidence, StoryCandidate
 from story_scout.redact import redact
 
 SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
@@ -77,7 +78,11 @@ MANY_BLOCK_TAGS = frozenset(
         "ul",
     }
 )
-SKIPPED_TAGS = frozenset({"iframe", "noscript", "script", "style", "svg", "template"})
+SKIPPED_TAGS = frozenset(
+    {"aside", "button", "footer", "form", "header", "iframe", "nav", "noscript", "script", "style", "svg", "template"}
+)
+PRIMARY_TAGS = frozenset({"article", "main"})
+WEAK_SOURCE_HOSTS = frozenset({"github.com", "gitlab.com", "bitbucket.org", "news.ycombinator.com"})
 BLOCKED_HOSTS = frozenset(
     {
         "0.0.0.0",
@@ -350,6 +355,111 @@ def collect_research(
     return evidence, omissions
 
 
+def attach_research(
+    candidates: Sequence[StoryCandidate],
+    *,
+    per_idea: int = 2,
+    timeout: float = 12.0,
+    min_overlap: int = 2,
+) -> tuple[list[StoryCandidate], list[Evidence], list[str]]:
+    """Fetch one verified source per idea, using the idea's own research query.
+
+    A source is attached only when the fetched page shares at least
+    ``min_overlap`` content words with the idea. That gate is what stops a
+    plausible-looking but unrelated article from becoming a citation.
+    """
+    updated: list[StoryCandidate] = []
+    evidence: list[Evidence] = []
+    notes: list[str] = []
+    seen_ids: set[str] = set()
+    for candidate in candidates:
+        query = (candidate.research_query or "").strip()
+        if not query:
+            query = _derive_query(candidate)
+        if not query:
+            updated.append(candidate)
+            continue
+        hits = search(query, limit=max(1, per_idea))
+        if not hits:
+            notes.append(f"no source found for {candidate.title!r} (query: {query})")
+            updated.append(candidate)
+            continue
+        idea_words = _content_words(
+            f"{candidate.title} {candidate.angle} {candidate.fact} "
+            f"{candidate.interpretation} {candidate.rationale}"
+        )
+        best: tuple[int, SearchHit, str, str] | None = None
+        for hit in hits:
+            if domain_of(hit.url) in WEAK_SOURCE_HOSTS:
+                notes.append(f"skipped {hit.url}: code host, not a perspective")
+                continue
+            page = fetch_page(hit.url, timeout=max(timeout, 15.0))
+            if page is None:
+                notes.append(f"skipped {hit.url}: fetch failed")
+                continue
+            title, text = page
+            score = len(idea_words & _content_words(f"{title} {text}"))
+            if score < min_overlap:
+                notes.append(f"skipped {hit.url}: no concrete overlap with the idea")
+                continue
+            if best is None or score > best[0]:
+                best = (score, hit, title, text)
+        if best is None:
+            updated.append(candidate)
+            continue
+        score, hit, title, text = best
+        digest = hashlib.sha1(hit.url.encode("utf-8")).hexdigest()[:8]
+        evidence_id = f"research:{slug_for(hit.url)}-{digest}"
+        if evidence_id not in seen_ids:
+            seen_ids.add(evidence_id)
+            evidence.append(
+                Evidence(
+                    id=evidence_id,
+                    label=redact(title)[:120],
+                    kind="research",
+                    excerpt=redact(text[:2500]),
+                    source="research",
+                    url=hit.url,
+                )
+            )
+        updated.append(replace(candidate, research_urls=(hit.url,)))
+        notes.append(f"cited {hit.url} for {candidate.title!r} (word overlap {score})")
+    return updated, evidence, notes
+
+
+_CONTENT_STOPWORDS = frozenset(
+    """
+    about after again against also because been before being both came cannot could
+    does doing down during each even ever every from have having here into itself
+    just like made make many more most much must never only other over same should
+    some still such than that their them then there these they thing things this
+    those through under until very want were what when where which while will with
+    without work would your
+    """.split()
+)
+
+
+def _content_words(text: str) -> set[str]:
+    return {
+        word
+        for word in re.findall(r"[a-z0-9]{4,}", text.lower())
+        if word not in _CONTENT_STOPWORDS
+    }
+
+
+def _derive_query(candidate: StoryCandidate, *, limit: int = 4) -> str:
+    """Build a search query from an idea when the model did not give one."""
+    words: list[str] = []
+    for text in (candidate.title, candidate.angle, candidate.fact):
+        for word in re.findall(r"[a-z0-9]{4,}", text.lower()):
+            if word in _CONTENT_STOPWORDS or word in words:
+                continue
+            words.append(word)
+        if len(words) >= limit:
+            break
+    return " ".join(words[:limit])
+
+
 def is_safe_url(url: str) -> bool:
     """Return True only for public http/https URLs that cannot reach this machine.
 
@@ -585,12 +695,18 @@ def _unwrap_redirect(href: str) -> str:
 
 
 class _TextParser(HTMLParser):
-    """Extract the title and readable body text from an HTML document."""
+    """Extract the title and readable body text from an HTML document.
+
+    Text inside an article or main element is preferred, because navigation and
+    account chrome live outside it. Short pages fall back to the whole body.
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.title = ""
         self._body: list[str] = []
+        self._primary: list[str] = []
+        self._primary_depth = 0
         self._skip_depth = 0
         self._head_depth = 0
         self._in_title = False
@@ -603,12 +719,19 @@ class _TextParser(HTMLParser):
             self._head_depth += 1
         elif tag == "title":
             self._in_title = True
-        elif tag in MANY_BLOCK_TAGS:
-            self._body.append(" ")
+        else:
+            if tag in PRIMARY_TAGS:
+                self._primary_depth += 1
+            if tag in MANY_BLOCK_TAGS:
+                self._body.append(" ")
+                if self._primary_depth:
+                    self._primary.append(" ")
 
     def handle_startendtag(self, tag, attrs):
         if tag.lower() in MANY_BLOCK_TAGS:
             self._body.append(" ")
+            if self._primary_depth:
+                self._primary.append(" ")
 
     def handle_endtag(self, tag):
         tag = tag.lower()
@@ -618,8 +741,13 @@ class _TextParser(HTMLParser):
             self._head_depth = max(0, self._head_depth - 1)
         elif tag == "title":
             self._in_title = False
-        elif tag in MANY_BLOCK_TAGS:
-            self._body.append(" ")
+        else:
+            if tag in MANY_BLOCK_TAGS:
+                self._body.append(" ")
+                if self._primary_depth:
+                    self._primary.append(" ")
+            if tag in PRIMARY_TAGS:
+                self._primary_depth = max(0, self._primary_depth - 1)
 
     def handle_data(self, data):
         if self._in_title:
@@ -628,6 +756,11 @@ class _TextParser(HTMLParser):
             return
         else:
             self._body.append(data)
+            if self._primary_depth:
+                self._primary.append(data)
 
     def body_text(self) -> str:
+        primary = _collapse("".join(self._primary))
+        if len(primary) >= 200:
+            return primary
         return "".join(self._body)

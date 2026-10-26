@@ -54,6 +54,7 @@ class StoryCandidate:
     research_urls: tuple[str, ...] = ()
     channel_x: str = ""
     channel_linkedin: str = ""
+    research_query: str = ""
 
     def as_idea(self) -> dict[str, object]:
         """Return the plain mapping the inbox renderer expects."""
@@ -68,4 +69,5 @@ class StoryCandidate:
             "work_evidence_ids": list(self.evidence_ids),
             "research_urls": list(self.research_urls),
             "channels": {"x": self.channel_x, "linkedin": self.channel_linkedin},
+            "research_query": self.research_query,
         }

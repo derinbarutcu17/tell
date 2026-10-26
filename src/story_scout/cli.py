@@ -11,12 +11,11 @@ from typing import Sequence
 
 from story_scout import __version__
 from story_scout.capture import collect_conversations, collect_from_export
-from story_scout.model import DEFAULT_MODEL, draft_story, suggest_queries, suggest_stories
+from story_scout.model import DEFAULT_MODEL, draft_story
 from story_scout.models import Evidence, StoryCandidate
 from story_scout.paths import data_directory, database_path
+from story_scout.pipeline import collect_packet, ideas_from_store, registered_projects, run_scan
 from story_scout.render import render_inbox
-from story_scout.research import collect_research
-from story_scout.sources import collect_evidence
 from story_scout.store import Store
 
 
@@ -55,10 +54,19 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip agent conversations and read only files and Git metadata.",
     )
+    scan.add_argument(
+        "--no-research",
+        action="store_true",
+        help="Do not fetch web sources for the ideas.",
+    )
 
     inbox = commands.add_parser("inbox", help="Render the local HTML inbox from saved ideas.")
     inbox.add_argument("--out", help="Output path for the HTML file.")
     inbox.add_argument("--status", choices=("new", "kept", "rejected"), default=None)
+
+    dashboard = commands.add_parser("dashboard", help="Open the local dashboard app.")
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument("--no-open", action="store_true", help="Do not open a browser.")
 
     stories = commands.add_parser("stories", help="List saved story candidates.")
     stories.add_argument("--status", choices=("new", "kept", "rejected"))
@@ -118,6 +126,8 @@ def _print_saved_story(story: dict) -> None:
     if story.get("interpretation"):
         print(f"Interpretation: {story['interpretation']}")
     print(f"Audience: {story['audience']}")
+    if story.get("research_urls"):
+        print("Research: " + ", ".join(story["research_urls"]))
     evidence = story.get("evidence", [])
     labels = [item.get("label", item.get("id", "evidence")) for item in evidence]
     print("Evidence: " + (", ".join(labels) if labels else "none"))
@@ -139,6 +149,7 @@ def _make_candidate(story: dict) -> StoryCandidate:
         research_urls=tuple(story.get("research_urls") or ()),
         channel_x=story.get("channel_x") or "",
         channel_linkedin=story.get("channel_linkedin") or "",
+        research_query=story.get("research_query") or "",
     )
 
 
@@ -161,30 +172,14 @@ def _as_evidence(rows: Sequence[dict]) -> list[Evidence]:
     ]
 
 
-def _ideas_from_store(store: Store, status: str | None = None) -> list[dict]:
-    ideas = []
-    for story in store.list_stories(status=status):
-        candidate = _make_candidate(story)
-        idea = candidate.as_idea()
-        idea["id"] = story["id"]
-        idea["status"] = story["status"]
-        ideas.append(idea)
-    return ideas
-
-
 def _render(store: Store, out: str | None = None, status: str | None = None) -> Path:
     target = Path(out).expanduser() if out else data_directory() / "inbox.html"
-    ideas = _ideas_from_store(store, status=status)
     return render_inbox(
-        ideas,
+        ideas_from_store(store, status=status),
         target,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         title="Tell",
     )
-
-
-def _registered_projects(store: Store) -> list[Path]:
-    return [Path(row["path"]) for row in store.list_sources()]
 
 
 def _run_capture(args: argparse.Namespace, store: Store) -> int:
@@ -194,7 +189,7 @@ def _run_capture(args: argparse.Namespace, store: Store) -> int:
     if args.export:
         evidence, omissions = collect_from_export(args.export)
     else:
-        projects = [Path(path).expanduser() for path in args.project] or _registered_projects(store)
+        projects = [Path(path).expanduser() for path in args.project] or registered_projects(store)
         if not projects:
             print("No project folders registered. Add one with: story-scout source add PATH", file=sys.stderr)
             return 2
@@ -217,16 +212,12 @@ def _run_scan(args: argparse.Namespace, store: Store) -> int:
     if args.days < 1 or args.days > 365:
         print("--days must be between 1 and 365.", file=sys.stderr)
         return 2
-    projects = _registered_projects(store)
+    projects = registered_projects(store)
     if not projects:
         print("No source folders registered. Add one with: story-scout source add PATH", file=sys.stderr)
         return 2
 
-    evidence, omissions = collect_evidence(projects, days=args.days)
-    if not args.no_agents:
-        agent_evidence, agent_omissions = collect_conversations(projects, days=args.days)
-        evidence.extend(agent_evidence)
-        omissions.extend(agent_omissions)
+    evidence, omissions = collect_packet(store, days=args.days, no_agents=args.no_agents)
     _print_evidence(evidence)
     for omission in omissions:
         print(f"Skipped: {omission}")
@@ -239,41 +230,23 @@ def _run_scan(args: argparse.Namespace, store: Store) -> int:
         )
         return 0
 
-    print(f"\nChoosing research directions with {DEFAULT_MODEL}.")
-    queries = suggest_queries(evidence, model=DEFAULT_MODEL)
-    for query in queries:
-        print(f"  query: {query}")
-    research_evidence: list[Evidence] = []
-    if queries:
-        print(f"Fetching sources for {len(queries)} query(ies).")
-        research_evidence, research_omissions = collect_research(queries)
-        omissions.extend(research_omissions)
-        for item in research_evidence:
-            print(f"  source: {item.url}")
-        if not research_evidence:
-            print("No source could be fetched. Suggestions will carry no citations.")
-
-    print(
-        f"\nSending {len(evidence)} work excerpt(s) and {len(research_evidence)} fetched "
-        f"source(s) to {DEFAULT_MODEL}."
-    )
-    warnings: list[str] = []
-    candidates = suggest_stories(
-        evidence,
-        research_evidence,
+    result = run_scan(
+        store,
+        days=args.days,
+        remote=True,
         model=DEFAULT_MODEL,
-        warnings=warnings,
+        no_research=args.no_research,
+        evidence=evidence,
+        omissions=omissions,
+        log=print,
     )
-    for warning in warnings:
-        print(f"Dropped: {warning}")
+    candidates = result.get("ideas") or []
+    ids = result.get("ids") or []
+    for story_id, candidate in zip(ids, candidates, strict=False):
+        _print_candidate(int(story_id), candidate)
     if not candidates:
-        print("The evidence did not support a story worth suggesting.")
         return 0
-    ids = store.save_candidates(candidates, list(evidence) + list(research_evidence))
-    for story_id, candidate in zip(ids, candidates, strict=True):
-        _print_candidate(story_id, candidate)
-    inbox_path = _render(store)
-    print(f"\nInbox: {inbox_path}")
+    print(f"\nInbox: {_render(store)}")
     return 0
 
 
@@ -309,6 +282,11 @@ def _run(args: argparse.Namespace) -> int:
         path = _render(store, out=args.out, status=args.status)
         print(f"Inbox: {path}")
         return 0
+
+    if args.command == "dashboard":
+        from story_scout.server import serve
+
+        return serve(store, port=args.port, open_browser=not args.no_open)
 
     if args.command == "stories":
         rows = store.list_stories(status=args.status)

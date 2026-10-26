@@ -20,6 +20,7 @@ STORY_COLUMNS = {
     "channel_x": "TEXT",
     "channel_linkedin": "TEXT",
     "research_urls": "TEXT",
+    "research_query": "TEXT",
 }
 EVIDENCE_COLUMNS = {
     "source": "TEXT",
@@ -71,6 +72,7 @@ def _candidate_dict(candidate: Any) -> dict[str, Any]:
         "channel_x": data.get("channel_x") or "",
         "channel_linkedin": data.get("channel_linkedin") or "",
         "research_urls": [str(item) for item in research_urls],
+        "research_query": data.get("research_query") or "",
     }
 
 
@@ -156,6 +158,10 @@ class Store:
                     path TEXT NOT NULL UNIQUE,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS stories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -172,7 +178,8 @@ class Store:
                     interpretation TEXT,
                     channel_x TEXT,
                     channel_linkedin TEXT,
-                    research_urls TEXT
+                    research_urls TEXT,
+                    research_query TEXT
                 );
                 CREATE TABLE IF NOT EXISTS story_evidence (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,8 +265,9 @@ class Store:
                     INSERT INTO stories
                     (title, angle, rationale, audience, confidence, evidence_ids,
                      status, draft, created_at, updated_at,
-                     fact, interpretation, channel_x, channel_linkedin, research_urls)
-                    VALUES (?, ?, ?, ?, ?, ?, 'new', NULL, ?, ?, ?, ?, ?, ?, ?)
+                     fact, interpretation, channel_x, channel_linkedin, research_urls,
+                     research_query)
+                    VALUES (?, ?, ?, ?, ?, ?, 'new', NULL, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         data["title"],
@@ -275,6 +283,7 @@ class Store:
                         data["channel_x"],
                         data["channel_linkedin"],
                         json.dumps(verified_urls),
+                        data["research_query"],
                     ),
                 )
                 story_id = int(cursor.lastrowid)
@@ -386,6 +395,7 @@ class Store:
             "channel_x": row["channel_x"] or "",
             "channel_linkedin": row["channel_linkedin"] or "",
             "research_urls": research_urls,
+            "research_query": row["research_query"] or "",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "evidence": evidence,
@@ -434,3 +444,16 @@ class Store:
                 (text, _now(), story_id),
             )
             return cursor.rowcount > 0
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        with self._connection() as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row is not None else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )

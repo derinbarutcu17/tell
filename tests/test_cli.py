@@ -44,8 +44,16 @@ class CliPrivacyTests(unittest.TestCase):
 
     def test_preview_does_not_call_model(self) -> None:
         self.register_source()
-        with patch("story_scout.cli.suggest_stories") as suggest:
-            result, out, err = self.call_cli("scan", "--days", "7")
+        evidence = Evidence(
+            id="e1",
+            label="notes.md",
+            kind="markdown",
+            excerpt="A note about the onboarding change.",
+            local_path="/x",
+        )
+        with patch("story_scout.cli.collect_packet", return_value=([evidence], [])):
+            with patch("story_scout.pipeline.suggest_stories") as suggest:
+                result, out, err = self.call_cli("scan", "--days", "7")
         self.assertEqual(result, 0, err)
         self.assertIn("Local preview only", out)
         self.assertIn("Nothing was sent", out)
@@ -68,15 +76,17 @@ class CliPrivacyTests(unittest.TestCase):
             evidence_ids=("e1",),
             confidence=0.82,
         )
-        with patch("story_scout.cli.collect_evidence", return_value=([evidence], [])):
-            with patch("story_scout.cli.collect_conversations", return_value=([], [])):
-                with patch("story_scout.cli.suggest_queries", return_value=[]):
-                    with patch(
-                        "story_scout.cli.suggest_stories", return_value=[candidate]
-                    ) as suggest:
-                        result, out, err = self.call_cli("scan", "--remote")
+        with patch("story_scout.cli.collect_packet", return_value=([evidence], [])):
+            with patch(
+                "story_scout.pipeline.suggest_stories", return_value=[candidate]
+            ) as suggest:
+                with patch(
+                    "story_scout.pipeline.attach_research",
+                    return_value=([candidate], [], []),
+                ):
+                    result, out, err = self.call_cli("scan", "--remote")
         self.assertEqual(result, 0, err)
-        self.assertIn("work excerpt(s)", out)
+        self.assertIn("Stored 1 idea", out)
         suggest.assert_called_once()
 
         store = Store(self.db)
@@ -110,20 +120,19 @@ class CliPrivacyTests(unittest.TestCase):
             source="agent",
             local_path="/repo",
         )
-        with patch("story_scout.cli.collect_evidence", return_value=([file_evidence], [])):
-            with patch(
-                "story_scout.cli.collect_conversations", return_value=([agent_evidence], ["skipped 1"])
-            ):
-                result, out, err = self.call_cli("scan", "--days", "7")
+        with patch(
+            "story_scout.cli.collect_packet",
+            return_value=([file_evidence, agent_evidence], ["skipped 1"]),
+        ):
+            result, out, err = self.call_cli("scan", "--days", "7")
         self.assertEqual(result, 0, err)
         self.assertIn("agent:abc:1", out)
         self.assertIn("Skipped: skipped 1", out)
 
-        with patch("story_scout.cli.collect_evidence", return_value=([file_evidence], [])):
-            with patch("story_scout.cli.collect_conversations") as conversations:
-                result, out, err = self.call_cli("scan", "--days", "7", "--no-agents")
+        with patch("story_scout.cli.collect_packet", return_value=([file_evidence], [])) as packet:
+            result, out, err = self.call_cli("scan", "--days", "7", "--no-agents")
         self.assertEqual(result, 0, err)
-        conversations.assert_not_called()
+        self.assertTrue(packet.call_args.kwargs["no_agents"])
         self.assertNotIn("agent:abc:1", out)
 
     def test_capture_export_never_calls_a_model(self) -> None:
@@ -131,14 +140,14 @@ class CliPrivacyTests(unittest.TestCase):
         export.write_text(
             "I found the real cause of the slowdown was a stale index.\n", encoding="utf-8"
         )
-        with patch("story_scout.cli.suggest_stories") as suggest:
-            with patch("story_scout.cli.suggest_queries") as queries:
+        with patch("story_scout.pipeline.suggest_stories") as suggest:
+            with patch("story_scout.pipeline.attach_research") as attach:
                 result, out, err = self.call_cli("capture", "--export", str(export))
         self.assertEqual(result, 0, err)
         self.assertIn("Nothing was sent", out)
         self.assertIn("stale index", out)
         suggest.assert_not_called()
-        queries.assert_not_called()
+        attach.assert_not_called()
 
 
 if __name__ == "__main__":

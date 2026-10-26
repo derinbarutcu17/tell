@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from story_scout.model import DEFAULT_MODEL, draft_story, suggest_queries, suggest_stories
+from story_scout.model import DEFAULT_MODEL, draft_story, suggest_stories
 from story_scout.models import Evidence, StoryCandidate
 
 
@@ -57,7 +57,7 @@ class ModelTests(unittest.TestCase):
             attached.append(path)
             packet = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual([item["id"] for item in packet["work_evidence"]], ["e1", "e2"])
-            self.assertEqual(packet["research_evidence"], [])
+            self.assertNotIn("research_evidence", packet)
             self.assertTrue(all("local_path" not in item for item in packet["work_evidence"]))
             self.assertEqual(command[command.index("--model") + 1], DEFAULT_MODEL)
             self.assertEqual(command[command.index("--agent") + 1], "story-scout")
@@ -170,7 +170,7 @@ class ModelTests(unittest.TestCase):
             command = run.call_args.args[0]
             self.assertEqual(command[command.index("--model") + 1], model)
 
-    def test_invented_research_url_is_dropped_with_a_warning(self) -> None:
+    def test_model_supplied_citations_are_ignored(self) -> None:
         response = {
             "candidates": [
                 {
@@ -179,18 +179,10 @@ class ModelTests(unittest.TestCase):
                     "rationale": "Reason",
                     "audience": "People",
                     "evidence_ids": ["e1"],
-                    "research_urls": ["https://example.com/never-fetched"],
+                    "research_query": "citation provenance",
+                    "research_urls": ["https://example.com/invented"],
                     "confidence": 0.5,
-                },
-                {
-                    "title": "Honest idea",
-                    "angle": "Angle",
-                    "rationale": "Reason",
-                    "audience": "People",
-                    "evidence_ids": ["e1"],
-                    "research_urls": [],
-                    "confidence": 0.5,
-                },
+                }
             ]
         }
         warnings: list[str] = []
@@ -198,36 +190,22 @@ class ModelTests(unittest.TestCase):
             "story_scout.model.subprocess.run",
             return_value=SimpleNamespace(returncode=0, stdout=_text_event(json.dumps(response)), stderr=""),
         ):
-            candidates = suggest_stories(self.evidence, [], warnings=warnings)
-        self.assertEqual([candidate.title for candidate in candidates], ["Honest idea"])
-        self.assertEqual(len(warnings), 1)
-        self.assertIn("not fetched", warnings[0])
+            candidates = suggest_stories(self.evidence, warnings=warnings)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].research_urls, ())
+        self.assertEqual(candidates[0].research_query, "citation provenance")
+        self.assertTrue(any("ignored" in warning for warning in warnings))
 
-    def test_verified_research_url_is_kept(self) -> None:
-        research = [
-            Evidence(
-                id="research:example-1",
-                label="Example",
-                kind="research",
-                excerpt="A fetched article about onboarding.",
-                source="research",
-                url="https://example.com/article",
-            )
-        ]
+    def test_research_query_is_optional(self) -> None:
         response = {
             "candidates": [
                 {
-                    "title": "Grounded idea",
+                    "title": "No query idea",
                     "angle": "Angle",
                     "rationale": "Reason",
                     "audience": "People",
-                    "fact": "Three tests showed the same wall.",
-                    "interpretation": "The flow asked for too many choices.",
                     "evidence_ids": ["e1"],
-                    "research_urls": ["https://example.com/article"],
-                    "channel_x": "One choice at a time.",
-                    "channel_linkedin": "We changed the flow after seeing the same wall three times.",
-                    "confidence": 0.7,
+                    "confidence": 0.5,
                 }
             ]
         }
@@ -235,21 +213,8 @@ class ModelTests(unittest.TestCase):
             "story_scout.model.subprocess.run",
             return_value=SimpleNamespace(returncode=0, stdout=_text_event(json.dumps(response)), stderr=""),
         ):
-            candidates = suggest_stories(self.evidence, research)
-        self.assertEqual(len(candidates), 1)
-        self.assertEqual(candidates[0].research_urls, ("https://example.com/article",))
-        self.assertEqual(candidates[0].fact, "Three tests showed the same wall.")
-        self.assertEqual(candidates[0].channel_x, "One choice at a time.")
-
-    def test_suggest_queries_falls_back_when_model_junk(self) -> None:
-        with patch(
-            "story_scout.model.subprocess.run",
-            return_value=SimpleNamespace(returncode=0, stdout=_text_event("no json here"), stderr=""),
-        ):
-            queries = suggest_queries(self.evidence)
-        self.assertTrue(queries)
-        self.assertLessEqual(len(queries), 5)
-        self.assertTrue(all(isinstance(query, str) and query.strip() for query in queries))
+            candidates = suggest_stories(self.evidence)
+        self.assertEqual(candidates[0].research_query, "")
 
     def test_draft_receives_only_selected_evidence(self) -> None:
         candidate = StoryCandidate(
