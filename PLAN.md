@@ -1,6 +1,6 @@
 # Tell build plan
 
-Status: Phase 0 and Phase 1 are implemented and verified on 2026-10-26. Phase 2 is partly done: providers, citation verification, and link-rot handling are in; the forced-connection gate is not. Phase 3 is partly done: the HTML inbox renders saved ideas; keep and reject are still CLI-only. Phase 4 is not started.
+Status: Phase 0, Phase 1, and Phase 2 are implemented and verified on 2026-10-26. Phase 3 is partly done: the HTML inbox renders saved ideas with research links; keep and reject are still CLI-only. Phase 4 is not started.
 
 Target: the version described in `IDEA.md`. Capture runs while I work. Small dashboard. Research-backed angles. X and LinkedIn.
 

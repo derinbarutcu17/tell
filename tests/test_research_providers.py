@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import sys
 import unittest
 from pathlib import Path
 from unittest import mock
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -134,6 +136,50 @@ class ProviderTests(unittest.TestCase):
     def test_empty_query_short_circuits(self) -> None:
         self.patch_read({})
         self.assertEqual(search("   ", limit=3), [])
+
+
+class SafeUrlTests(unittest.TestCase):
+    def test_literal_private_addresses_are_rejected(self) -> None:
+        for url in (
+            "http://127.0.0.1/",
+            "http://10.1.2.3/",
+            "http://192.168.1.5/",
+            "http://169.254.1.1/",
+            "http://[::1]/",
+            "http://0.0.0.0/",
+            "http://localhost/",
+            "ftp://example.com/x",
+            "javascript:alert(1)",
+        ):
+            self.assertFalse(research.is_safe_url(url), url)
+
+    def test_shortcut_loopback_forms_are_rejected_after_resolution(self) -> None:
+        loopback = [ipaddress.ip_address("127.0.0.1")]
+        for url in ("http://127.1/", "http://0x7f.1/", "http://127.0.0.1.nip.io/"):
+            with mock.patch.object(research, "_resolve_addresses", return_value=loopback):
+                self.assertFalse(research.is_safe_url(url), url)
+
+    def test_hostname_resolving_to_a_private_address_is_rejected(self) -> None:
+        private = [ipaddress.ip_address("10.0.0.5")]
+        with mock.patch.object(research, "_resolve_addresses", return_value=private):
+            self.assertFalse(research.is_safe_url("https://intruder.example/post"))
+
+    def test_public_hostname_is_allowed(self) -> None:
+        public = [ipaddress.ip_address("93.184.216.34")]
+        with mock.patch.object(research, "_resolve_addresses", return_value=public):
+            self.assertTrue(research.is_safe_url("https://example.com/post"))
+
+    def test_unresolvable_hostname_is_left_to_the_fetch_to_fail(self) -> None:
+        with mock.patch.object(research, "_resolve_addresses", return_value=[]):
+            self.assertTrue(research.is_safe_url("https://nothing.example/post"))
+
+    def test_redirect_to_a_private_address_is_refused(self) -> None:
+        handler = research._SafeRedirectHandler()
+        fake_request = mock.Mock()
+        with self.assertRaises(HTTPError):
+            handler.redirect_request(
+                fake_request, None, 302, "Found", {}, "http://192.168.1.1/admin"
+            )
 
 
 if __name__ == "__main__":

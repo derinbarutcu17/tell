@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from story_scout.redact import redact
+
 
 @dataclass(frozen=True, slots=True)
 class Evidence:
@@ -20,10 +22,14 @@ class Evidence:
     url: str | None = None
 
     def public_dict(self) -> dict[str, object]:
-        """Return only fields permitted in a remote model packet."""
+        """Return only fields permitted in a remote model packet.
+
+        Labels can carry user-authored session titles, so they pass the same
+        redaction gate as excerpts. This is the last line of defence.
+        """
         return {
             "id": self.id,
-            "label": self.label,
+            "label": redact(self.label),
             "kind": self.kind,
             "source": self.source,
             "excerpt": self.excerpt,

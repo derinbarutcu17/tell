@@ -224,14 +224,47 @@ class CaptureTests(unittest.TestCase):
         self.assertIn("ninety seconds", evidence[0].excerpt)
         self.assertIn("never returns", evidence[0].excerpt)
 
-    def test_no_project_filter_captures_everything_recent(self) -> None:
+    def test_no_project_filter_refuses_to_read_everything(self) -> None:
         _make_v2_database(
             self.db,
             [("ses_aaaa1111", str(self.project), "Mine", self.recent, None)],
             {"ses_aaaa1111": [_user("Any recent work counts when no project filter is given."), _assistant("Ok.")]},
         )
-        evidence, _ = collect_conversations(days=7, now=NOW, db_path=self.db)
+        evidence, omissions = collect_conversations(days=7, now=NOW, db_path=self.db)
+        self.assertEqual(evidence, [])
+        self.assertTrue(any("no project folder given" in omission for omission in omissions))
+
+    def test_session_titles_are_redacted_in_labels_and_packets(self) -> None:
+        title = "fix ghp_abcdefghijklmnopqrstuvwxyz for /Users/derin/secret-project/notes.md"
+        _make_v2_database(
+            self.db,
+            [("ses_aaaa1111", str(self.project), title, self.recent, None)],
+            {"ses_aaaa1111": [_user("A real problem I hit while building this thing today."), _assistant("Fixed.")]},
+        )
+        evidence, _ = collect_conversations([self.project], days=7, now=NOW, db_path=self.db)
         self.assertEqual(len(evidence), 1)
+        label = evidence[0].label
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz", label)
+        self.assertNotIn("/Users/derin", label)
+        packet_label = evidence[0].public_dict()["label"]
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz", str(packet_label))
+        self.assertNotIn("/Users/derin", str(packet_label))
+
+    def test_unsupported_session_layout_is_reported(self) -> None:
+        connection = sqlite3.connect(self.db)
+        connection.executescript(
+            """
+            CREATE TABLE session (id TEXT PRIMARY KEY, title TEXT, time_updated INTEGER);
+            CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT);
+            CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, data TEXT);
+            """
+        )
+        connection.execute("INSERT INTO session VALUES ('ses_old', 'Old', ?)", (self.recent,))
+        connection.commit()
+        connection.close()
+        evidence, omissions = collect_conversations([self.project], days=7, now=NOW, db_path=self.db)
+        self.assertEqual(evidence, [])
+        self.assertTrue(any("does not use the supported" in omission for omission in omissions))
 
 
 if __name__ == "__main__":

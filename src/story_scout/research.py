@@ -5,10 +5,12 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+import socket
 import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.error import HTTPError
 from urllib.parse import (
     parse_qs,
     parse_qsl,
@@ -19,9 +21,10 @@ from urllib.parse import (
     urlsplit,
     urlunsplit,
 )
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from story_scout.models import Evidence
+from story_scout.redact import redact
 
 SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
 HN_ENDPOINT = "https://hn.algolia.com/api/v1/search"
@@ -324,7 +327,7 @@ def collect_research(
                     id=f"research:{slug_for(hit.url)}-{len(evidence) + 1}",
                     label=title or domain_of(hit.url) or hit.url,
                     kind="research",
-                    excerpt=text,
+                    excerpt=redact(text),
                     date=None,
                     local_path=None,
                     commit=None,
@@ -343,7 +346,12 @@ def collect_research(
 
 
 def is_safe_url(url: str) -> bool:
-    """Return True only for public http/https URLs that cannot reach this machine."""
+    """Return True only for public http/https URLs that cannot reach this machine.
+
+    A hostname is resolved and every returned address is checked, so shortcuts
+    such as ``127.1``, ``0x7f.1``, and DNS names that map to loopback are
+    rejected as well as literal private addresses.
+    """
     try:
         parts = urlsplit((url or "").strip())
     except ValueError:
@@ -358,19 +366,58 @@ def is_safe_url(url: str) -> bool:
     except ValueError:
         address = None
     if address is not None:
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
-            return False
-        return True
+        return not _address_is_blocked(address)
     if "." not in host:
         return False
-    return not host.endswith(BLOCKED_SUFFIXES)
+    if host.endswith(BLOCKED_SUFFIXES):
+        return False
+    for candidate in _resolve_addresses(host):
+        if _address_is_blocked(candidate):
+            return False
+    return True
+
+
+def _address_is_blocked(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
+def _resolve_addresses(host: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    """Resolve a hostname to addresses. A failed lookup yields an empty list."""
+    try:
+        records = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError):
+        return []
+    addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for record in records:
+        try:
+            addresses.append(ipaddress.ip_address(record[4][0]))
+        except (ValueError, IndexError, TypeError):
+            continue
+    return addresses
+
+
+class _SafeRedirectHandler(HTTPRedirectHandler):
+    """Refuse a redirect whose destination is not a public URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        if not is_safe_url(newurl):
+            raise HTTPError(newurl, code, "blocked redirect to a non-public address", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = build_opener(_SafeRedirectHandler())
+
+
+def urlopen(request: Request, *, timeout: float):
+    """Fetch through an opener that re-checks every redirect destination."""
+    return _OPENER.open(request, timeout=timeout)
 
 
 def normalize_url(url: str) -> str | None:

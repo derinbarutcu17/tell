@@ -251,6 +251,7 @@ class Store:
         with self._connection() as conn:
             for candidate in (candidates or []):
                 data = _candidate_dict(candidate)
+                verified_urls = [url for url in data["research_urls"] if url in research_by_url]
                 now = _now()
                 cursor = conn.execute(
                     """
@@ -273,7 +274,7 @@ class Store:
                         data["interpretation"],
                         data["channel_x"],
                         data["channel_linkedin"],
-                        json.dumps(data["research_urls"]),
+                        json.dumps(verified_urls),
                     ),
                 )
                 story_id = int(cursor.lastrowid)

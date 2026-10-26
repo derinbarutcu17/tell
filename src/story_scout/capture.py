@@ -135,7 +135,7 @@ def _turn_evidence(
         if len(body) > remaining:
             body, _ = _bound(body, remaining)
             omissions.append(f"truncated agent evidence: total character limit ({MAX_AGENT_CHARS})")
-        title = session_title.strip() or short_id
+        title = redact(session_title.strip() or short_id)
         evidence.append(
             Evidence(
                 id=f"agent:{short_id}:{index}",
@@ -178,7 +178,7 @@ def _normalize_dir(value: str | os.PathLike[str] | None) -> str:
 
 def _within_any(directory: str, roots: list[str]) -> bool:
     if not roots:
-        return True
+        return False
     candidate = _normalize_dir(directory)
     for root in roots:
         if candidate == root or candidate.startswith(root.rstrip("/") + "/"):
@@ -204,6 +204,11 @@ def collect_conversations(
         project_paths = [project_paths]
     roots = [_normalize_dir(path) for path in (project_paths or [])]
     roots = [root for root in roots if root]
+    if not roots:
+        return [], [
+            "no project folder given, so no agent session was read "
+            "(Tell never reads sessions outside folders you registered)"
+        ]
 
     if db_path is not None:
         candidates = [Path(db_path).expanduser()]
@@ -231,29 +236,25 @@ def collect_conversations(
         try:
             tables = _table_names(connection)
             has_v2 = "session_v2" in tables and "session_message" in tables
-            if has_v2:
-                session_rows = connection.execute(
-                    "SELECT id, directory, title, time_updated FROM session_v2 "
-                    "WHERE time_updated >= ? AND (parent_id IS NULL OR parent_id = '') "
-                    "ORDER BY time_updated DESC",
-                    (threshold_ms,),
-                ).fetchall()
-                child_count = connection.execute(
-                    "SELECT count(*) FROM session_v2 WHERE time_updated >= ? "
-                    "AND parent_id IS NOT NULL AND parent_id != ''",
-                    (threshold_ms,),
-                ).fetchone()[0]
-                if child_count:
-                    omissions.append(f"skipped {child_count} subagent session(s): not the user's own work")
-            elif {"session", "message", "part"} <= tables:
-                session_rows = connection.execute(
-                    "SELECT id, directory, title, time_updated FROM session "
-                    "WHERE time_updated >= ? ORDER BY time_updated DESC",
-                    (threshold_ms,),
-                ).fetchall()
-            else:
-                omissions.append(f"session database {database.name} has no known session tables")
+            if not has_v2:
+                omissions.append(
+                    f"session database {database.name} does not use the supported "
+                    "OpenCode session_v2 tables; export a conversation instead"
+                )
                 continue
+            session_rows = connection.execute(
+                "SELECT id, directory, title, time_updated FROM session_v2 "
+                "WHERE time_updated >= ? AND (parent_id IS NULL OR parent_id = '') "
+                "ORDER BY time_updated DESC",
+                (threshold_ms,),
+            ).fetchall()
+            child_count = connection.execute(
+                "SELECT count(*) FROM session_v2 WHERE time_updated >= ? "
+                "AND parent_id IS NOT NULL AND parent_id != ''",
+                (threshold_ms,),
+            ).fetchone()[0]
+            if child_count:
+                omissions.append(f"skipped {child_count} subagent session(s): not the user's own work")
 
             selected = [row for row in session_rows if _within_any(row["directory"], roots)]
             if len(selected) > max_sessions:
@@ -266,17 +267,11 @@ def collect_conversations(
                 session_id = str(row["id"])
                 directory = row["directory"]
                 title = row["title"] or ""
-                if has_v2:
-                    message_rows = connection.execute(
-                        "SELECT type, data FROM session_message WHERE session_id = ? ORDER BY seq",
-                        (session_id,),
-                    ).fetchall()
-                else:
-                    message_rows = connection.execute(
-                        "SELECT data FROM message WHERE session_id = ? ORDER BY time_created",
-                        (session_id,),
-                    ).fetchall()
-                turns = _build_turns(message_rows, has_v2=has_v2)
+                message_rows = connection.execute(
+                    "SELECT type, data FROM session_message WHERE session_id = ? ORDER BY seq",
+                    (session_id,),
+                ).fetchall()
+                turns = _build_turns(message_rows)
                 if not turns:
                     continue
                 session_evidence, session_omissions, used = _turn_evidence(
@@ -302,7 +297,15 @@ def collect_conversations(
     return evidence, omissions
 
 
-def _build_turns(message_rows: list[sqlite3.Row], *, has_v2: bool) -> list[tuple[str, str, str]]:
+def _created_ms(payload: dict[str, object]) -> object:
+    """Return the creation timestamp from a message payload, whatever its shape."""
+    time_value = payload.get("time")
+    if isinstance(time_value, dict):
+        return time_value.get("created")
+    return None
+
+
+def _build_turns(message_rows: list[sqlite3.Row]) -> list[tuple[str, str, str]]:
     """Collapse raw rows into (date, user_text, agent_text) turns."""
     turns: list[tuple[str, str, str]] = []
     current_date: str | None = None
@@ -329,28 +332,20 @@ def _build_turns(message_rows: list[sqlite3.Row], *, has_v2: bool) -> list[tuple
             continue
         if not isinstance(payload, dict):
             continue
-        if has_v2:
+        try:
             message_type = str(row["type"])
             if message_type in SKIP_MESSAGE_TYPES:
                 continue
             if message_type == "user":
                 flush()
                 current_user = _as_text(payload.get("text"))
-                current_date = _iso_from_ms((payload.get("time") or {}).get("created")) or current_date
+                current_date = _iso_from_ms(_created_ms(payload)) or current_date
             elif message_type == "assistant":
                 text = _assistant_text(payload)
                 if text:
                     current_agent.append(text)
+        except (AttributeError, TypeError, KeyError, ValueError):
             continue
-        role = payload.get("role")
-        if role == "user":
-            flush()
-            current_user = _assistant_text(payload)
-            current_date = _iso_from_ms((payload.get("time") or {}).get("created")) or current_date
-        elif role == "assistant":
-            text = _assistant_text(payload)
-            if text:
-                current_agent.append(text)
     flush()
     return turns
 

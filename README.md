@@ -25,7 +25,7 @@ The draft stays local. There is no publishing, no scheduling, and no background 
 
 Tell does not record anything itself. It reads the session databases your agent already writes while you work. Supported today:
 
-- OpenCode session databases (`~/.local/share/opencode/opencode.db`), current and older layouts
+- OpenCode session databases (`~/.local/share/opencode/opencode.db`), current layout only
 - Codex-style rollout `.jsonl` exports
 - Any Markdown conversation export
 
@@ -48,7 +48,7 @@ The OpenCode CLI and a working OpenCode connection are required. The project doe
 
 ## Data boundaries
 
-Only folders you register are scanned. Tell reads Git metadata, recently changed Markdown or plain text, and agent conversation turns. It does not read source-code contents, hidden files, credentials, browser history, or unrelated folders. Sources and bounded excerpts live in a local SQLite database; complete documents are never stored. The local preview shows exactly what would be sent.
+Only folders you register are scanned. Tell reads Git metadata, recently changed Markdown or plain text, and agent conversation turns. It does not read source-code contents, hidden files, credentials, browser history, or unrelated folders. Sources and bounded excerpts live in a local SQLite database; complete documents are never stored whole. The local preview prints the first 200 characters of each excerpt, while a remote scan sends the full bounded excerpt, at most 12,000 characters per file and 4,000 per conversation turn.
 
 ## Checks
 

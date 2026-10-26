@@ -34,7 +34,7 @@ StoryCandidate fields:
 
 ## Modules
 
-- `capture.py` reads agent session data. It supports the current OpenCode tables (`session_v2`, `session_message`), the older `session`/`message`/`part` tables, Codex-style rollout JSONL, and plain Markdown exports. It pairs each user message with the agent text that followed it, skips child subagent sessions, applies redaction, and bounds output.
+- `capture.py` reads agent session data. It supports the current OpenCode tables (`session_v2`, `session_message`), Codex-style rollout JSONL, and plain Markdown exports. It pairs each user message with the agent text that followed it, skips child subagent sessions, applies redaction to excerpts and labels, and bounds output.
 - `sources.py` gathers file and Git evidence inside registered paths. It reads Git metadata and eligible text files, not source-code contents.
 - `research.py` turns queries into fetched sources. Providers are tried in order and merged: Hacker News search, arXiv, DuckDuckGo HTML, Wikipedia. Only a page that fetched successfully with usable text becomes evidence.
 - `model.py` calls OpenCode and parses strict JSON. It sends only public evidence fields, checks evidence IDs, rejects unverified citations, and enforces the free-model allowlist.
@@ -65,6 +65,7 @@ The presentation may change if behavior stays the same and the privacy gate rema
 - Never read a session from a project the user did not register.
 - Redact credential-shaped strings and absolute home paths before storage and before any remote call.
 - Bound packet, session, turn, and per-file size. Report every omission in the local preview.
+- The local preview prints the first 200 characters of each excerpt. A remote scan sends the full bounded excerpt, at most 12,000 characters per file and 4,000 per conversation turn.
 - `--remote` is the data-sharing boundary. Say which model receives the packet.
 - Refuse non-http(s) URLs and private network addresses in research fetches.
 - No background daemon, no social API, no publishing.

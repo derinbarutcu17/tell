@@ -23,7 +23,7 @@ Monday, lunch break. You are working on your project and you open Tell's small d
 
 - Git commit messages, dates, hashes, and changed file names from a registered repository.
 - Recently changed Markdown and plain-text files inside registered folders.
-- Agent conversation turns from session databases on disk: the user's messages plus the agent's final answers. Tool output is summarised by name, not stored in full.
+- Agent conversation turns from session databases on disk: the user's messages plus the agent's final answers. Tool output and reasoning are skipped, not stored.
 
 Do not read source-code contents, hidden files, credentials, environment files, browser data, whole-device history, or unrelated folders. Do not follow symlinks outside a registered folder.
 

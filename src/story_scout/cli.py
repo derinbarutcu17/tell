@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -359,6 +360,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return _run(args)
+    except sqlite3.Error as exc:
+        print(
+            f"story-scout: the local database could not be read ({exc}). "
+            "Move it aside and try again.",
+            file=sys.stderr,
+        )
+        return 2
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"story-scout: {exc}", file=sys.stderr)
         return 2
