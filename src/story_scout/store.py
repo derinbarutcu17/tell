@@ -11,8 +11,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VALID_STATUSES = {"new", "kept", "rejected"}
+
+STORY_COLUMNS = {
+    "fact": "TEXT",
+    "interpretation": "TEXT",
+    "channel_x": "TEXT",
+    "channel_linkedin": "TEXT",
+    "research_urls": "TEXT",
+}
+EVIDENCE_COLUMNS = {
+    "source": "TEXT",
+    "url": "TEXT",
+}
 
 
 def _now() -> str:
@@ -42,6 +54,11 @@ def _candidate_dict(candidate: Any) -> dict[str, Any]:
         evidence_ids = list(evidence_ids)
     if evidence_ids is None:
         evidence_ids = []
+    research_urls = data.get("research_urls", ())
+    if isinstance(research_urls, tuple):
+        research_urls = list(research_urls)
+    if research_urls is None:
+        research_urls = []
     return {
         "title": data.get("title"),
         "angle": data.get("angle"),
@@ -49,6 +66,11 @@ def _candidate_dict(candidate: Any) -> dict[str, Any]:
         "audience": data.get("audience"),
         "confidence": data.get("confidence", 0.0),
         "evidence_ids": [str(item) for item in evidence_ids],
+        "fact": data.get("fact") or "",
+        "interpretation": data.get("interpretation") or "",
+        "channel_x": data.get("channel_x") or "",
+        "channel_linkedin": data.get("channel_linkedin") or "",
+        "research_urls": [str(item) for item in research_urls],
     }
 
 
@@ -72,6 +94,8 @@ def _evidence_dict(evidence: Any) -> dict[str, Any]:
         "commit": data.get("commit"),
         "line_start": data.get("line_start"),
         "line_end": data.get("line_end"),
+        "source": data.get("source"),
+        "url": data.get("url"),
     }
 
 
@@ -143,7 +167,12 @@ class Store:
                     status TEXT NOT NULL DEFAULT 'new',
                     draft TEXT,
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    fact TEXT,
+                    interpretation TEXT,
+                    channel_x TEXT,
+                    channel_linkedin TEXT,
+                    research_urls TEXT
                 );
                 CREATE TABLE IF NOT EXISTS story_evidence (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,10 +186,14 @@ class Store:
                     "commit" TEXT,
                     line_start INTEGER,
                     line_end INTEGER,
+                    source TEXT,
+                    url TEXT,
                     FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
                 );
                 """
             )
+            self._ensure_columns(conn, "stories", STORY_COLUMNS)
+            self._ensure_columns(conn, "story_evidence", EVIDENCE_COLUMNS)
             row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
@@ -168,6 +201,13 @@ class Store:
                 current = int(row["version"])
                 if current < SCHEMA_VERSION:
                     conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
+
+    @staticmethod
+    def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, declaration in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
     def add_source(self, path: Any) -> int:
         resolved = _resolve_path(path)
@@ -211,8 +251,9 @@ class Store:
                     """
                     INSERT INTO stories
                     (title, angle, rationale, audience, confidence, evidence_ids,
-                     status, draft, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'new', NULL, ?, ?)
+                     status, draft, created_at, updated_at,
+                     fact, interpretation, channel_x, channel_linkedin, research_urls)
+                    VALUES (?, ?, ?, ?, ?, ?, 'new', NULL, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         data["title"],
@@ -223,6 +264,11 @@ class Store:
                         json.dumps(data["evidence_ids"]),
                         now,
                         now,
+                        data["fact"],
+                        data["interpretation"],
+                        data["channel_x"],
+                        data["channel_linkedin"],
+                        json.dumps(data["research_urls"]),
                     ),
                 )
                 story_id = int(cursor.lastrowid)
@@ -239,13 +285,15 @@ class Store:
                             "commit": None,
                             "line_start": None,
                             "line_end": None,
+                            "source": None,
+                            "url": None,
                         }
                     conn.execute(
                         """
                         INSERT INTO story_evidence
                         (story_id, evidence_id, label, kind, excerpt, date,
-                         local_path, "commit", line_start, line_end)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         local_path, "commit", line_start, line_end, source, url)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             story_id,
@@ -258,6 +306,8 @@ class Store:
                             record["commit"],
                             record["line_start"],
                             record["line_end"],
+                            record["source"],
+                            record["url"],
                         ),
                     )
                 result_ids.append(story_id)
@@ -268,7 +318,7 @@ class Store:
         evidence_rows = conn.execute(
             """
             SELECT evidence_id, label, kind, excerpt, date, local_path, "commit",
-                   line_start, line_end
+                   line_start, line_end, source, url
             FROM story_evidence
             WHERE story_id = ?
             ORDER BY id
@@ -286,6 +336,8 @@ class Store:
                 "commit": r["commit"],
                 "line_start": r["line_start"],
                 "line_end": r["line_end"],
+                "source": r["source"],
+                "url": r["url"],
             }
             for r in evidence_rows
         ]
@@ -295,6 +347,12 @@ class Store:
             evidence_ids = []
         if not isinstance(evidence_ids, list):
             evidence_ids = list(evidence_ids) if evidence_ids is not None else []
+        try:
+            research_urls = json.loads(row["research_urls"]) if row["research_urls"] else []
+        except (json.JSONDecodeError, TypeError):
+            research_urls = []
+        if not isinstance(research_urls, list):
+            research_urls = []
         return {
             "id": story_id,
             "title": row["title"],
@@ -305,6 +363,11 @@ class Store:
             "evidence_ids": evidence_ids,
             "status": row["status"],
             "draft": row["draft"],
+            "fact": row["fact"] or "",
+            "interpretation": row["interpretation"] or "",
+            "channel_x": row["channel_x"] or "",
+            "channel_linkedin": row["channel_linkedin"] or "",
+            "research_urls": research_urls,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "evidence": evidence,

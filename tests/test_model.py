@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from story_scout.model import DEFAULT_MODEL, draft_story, suggest_stories
+from story_scout.model import DEFAULT_MODEL, draft_story, suggest_queries, suggest_stories
 from story_scout.models import Evidence, StoryCandidate
 
 
@@ -56,8 +56,9 @@ class ModelTests(unittest.TestCase):
             path = Path(command[command.index("--file") + 1])
             attached.append(path)
             packet = json.loads(path.read_text(encoding="utf-8"))
-            self.assertEqual([item["id"] for item in packet["evidence"]], ["e1", "e2"])
-            self.assertTrue(all("local_path" not in item for item in packet["evidence"]))
+            self.assertEqual([item["id"] for item in packet["work_evidence"]], ["e1", "e2"])
+            self.assertEqual(packet["research_evidence"], [])
+            self.assertTrue(all("local_path" not in item for item in packet["work_evidence"]))
             self.assertEqual(command[command.index("--model") + 1], DEFAULT_MODEL)
             self.assertEqual(command[command.index("--agent") + 1], "story-scout")
             return SimpleNamespace(returncode=0, stdout=_text_event(json.dumps(response)), stderr="")
@@ -142,6 +143,113 @@ class ModelTests(unittest.TestCase):
     def test_paid_model_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "pinned to the free model"):
             suggest_stories(self.evidence, model="opencode-go/gpt-6-luna")
+
+    def test_both_free_models_are_accepted(self) -> None:
+        response = {
+            "candidates": [
+                {
+                    "title": "A free model story",
+                    "angle": "Angle",
+                    "rationale": "Reason",
+                    "audience": "People",
+                    "evidence_ids": ["e1"],
+                    "confidence": 0.4,
+                }
+            ]
+        }
+        for model in ("opencode/deepseek-v4.1-flash-free", "opencode-go/beam-free"):
+            with patch(
+                "story_scout.model.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=0, stdout=_text_event(json.dumps(response)), stderr=""
+                ),
+            ) as run:
+                candidates = suggest_stories(self.evidence, model=model)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(run.call_args.kwargs["timeout"], 240)
+            command = run.call_args.args[0]
+            self.assertEqual(command[command.index("--model") + 1], model)
+
+    def test_invented_research_url_is_dropped_with_a_warning(self) -> None:
+        response = {
+            "candidates": [
+                {
+                    "title": "Fabricated citation",
+                    "angle": "Angle",
+                    "rationale": "Reason",
+                    "audience": "People",
+                    "evidence_ids": ["e1"],
+                    "research_urls": ["https://example.com/never-fetched"],
+                    "confidence": 0.5,
+                },
+                {
+                    "title": "Honest idea",
+                    "angle": "Angle",
+                    "rationale": "Reason",
+                    "audience": "People",
+                    "evidence_ids": ["e1"],
+                    "research_urls": [],
+                    "confidence": 0.5,
+                },
+            ]
+        }
+        warnings: list[str] = []
+        with patch(
+            "story_scout.model.subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout=_text_event(json.dumps(response)), stderr=""),
+        ):
+            candidates = suggest_stories(self.evidence, [], warnings=warnings)
+        self.assertEqual([candidate.title for candidate in candidates], ["Honest idea"])
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("not fetched", warnings[0])
+
+    def test_verified_research_url_is_kept(self) -> None:
+        research = [
+            Evidence(
+                id="research:example-1",
+                label="Example",
+                kind="research",
+                excerpt="A fetched article about onboarding.",
+                source="research",
+                url="https://example.com/article",
+            )
+        ]
+        response = {
+            "candidates": [
+                {
+                    "title": "Grounded idea",
+                    "angle": "Angle",
+                    "rationale": "Reason",
+                    "audience": "People",
+                    "fact": "Three tests showed the same wall.",
+                    "interpretation": "The flow asked for too many choices.",
+                    "evidence_ids": ["e1"],
+                    "research_urls": ["https://example.com/article"],
+                    "channel_x": "One choice at a time.",
+                    "channel_linkedin": "We changed the flow after seeing the same wall three times.",
+                    "confidence": 0.7,
+                }
+            ]
+        }
+        with patch(
+            "story_scout.model.subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout=_text_event(json.dumps(response)), stderr=""),
+        ):
+            candidates = suggest_stories(self.evidence, research)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].research_urls, ("https://example.com/article",))
+        self.assertEqual(candidates[0].fact, "Three tests showed the same wall.")
+        self.assertEqual(candidates[0].channel_x, "One choice at a time.")
+
+    def test_suggest_queries_falls_back_when_model_junk(self) -> None:
+        with patch(
+            "story_scout.model.subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout=_text_event("no json here"), stderr=""),
+        ):
+            queries = suggest_queries(self.evidence)
+        self.assertTrue(queries)
+        self.assertLessEqual(len(queries), 5)
+        self.assertTrue(all(isinstance(query, str) and query.strip() for query in queries))
 
     def test_draft_receives_only_selected_evidence(self) -> None:
         candidate = StoryCandidate(

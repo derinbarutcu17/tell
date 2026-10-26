@@ -21,15 +21,19 @@ args = sys.argv[1:]
 payload_path = args[args.index("--file") + 1]
 with open(payload_path, encoding="utf-8") as stream:
     payload = json.load(stream)
-evidence = payload.get("evidence", [])
-if not evidence or any("local_path" in item for item in evidence):
+work = payload.get("work_evidence") or payload.get("evidence") or []
+research = payload.get("research_evidence") or []
+if not work or any("local_path" in item for item in work):
     raise SystemExit("unexpected evidence payload")
-if any(os.path.isabs(item.get("label", "")) for item in evidence):
+if any(os.path.isabs(item.get("label", "")) for item in work):
     raise SystemExit("absolute path in evidence payload")
 with open(os.environ["STORY_SCOUT_E2E_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps({"payload_path": payload_path}) + "\n")
 
-if "Draft one concise social post" in args[-1]:
+prompt = args[-1]
+if "short web search queries" in prompt:
+    response = json.dumps({"queries": []})
+elif "Draft one concise social post" in prompt:
     response = "A small UX change taught me to reduce the first decision."
 else:
     response = json.dumps({"candidates": [{
@@ -37,7 +41,12 @@ else:
         "angle": "A user got stuck, so the first-run flow was simplified.",
         "rationale": "The note records a concrete friction and product change.",
         "audience": "People designing onboarding",
-        "evidence_ids": [evidence[0]["id"]],
+        "fact": "The user got stuck and the flow now asks for one choice at a time.",
+        "interpretation": "Fewer first decisions may reduce drop-off.",
+        "evidence_ids": [work[0]["id"]],
+        "research_urls": [],
+        "channel_x": "One choice at a time beat four.",
+        "channel_linkedin": "A new user got stuck, so we cut the first-run flow to one decision.",
         "confidence": 0.82,
     }]})
 print(json.dumps({"type": "text", "part": {"text": response}}))
@@ -69,6 +78,7 @@ class CliEndToEndTests(unittest.TestCase):
             (str(ROOT / "src"), self.env.get("PYTHONPATH", ""))
         )
         self.env["STORY_SCOUT_E2E_LOG"] = str(self.call_log)
+        self.env["STORY_SCOUT_DATA_DIR"] = str(self.root / "data")
 
     def tearDown(self) -> None:
         self.temp.cleanup()
@@ -106,7 +116,7 @@ class CliEndToEndTests(unittest.TestCase):
         self.assertIn("Draft saved locally", draft)
 
         calls = [json.loads(line) for line in self.call_log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
         self.assertTrue(all(not Path(call["payload_path"]).exists() for call in calls))
 
 

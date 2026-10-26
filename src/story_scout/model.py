@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,14 +12,24 @@ from typing import Any, Sequence
 from story_scout.models import Evidence, StoryCandidate
 
 DEFAULT_MODEL = "opencode-go/beam-free"
+FREE_MODELS = frozenset(
+    {
+        "opencode-go/beam-free",
+        "opencode/deepseek-v4.1-flash-free",
+    }
+)
 AGENT_NAME = "story-scout"
-MAX_CANDIDATES = 3
+MAX_CANDIDATES = 5
+MAX_QUERIES = 5
 MAX_DRAFT_CHARS = 5000
 
 
 def _check_model(model: str) -> None:
-    if model != DEFAULT_MODEL:
-        raise ValueError(f"Story Scout V1 is pinned to the free model {DEFAULT_MODEL}.")
+    if model not in FREE_MODELS:
+        raise ValueError(
+            f"Tell is pinned to the free model set {', '.join(sorted(FREE_MODELS))}; "
+            f"{model!r} is not one of them."
+        )
 
 
 def _extract_text(stdout: str) -> str:
@@ -43,6 +54,27 @@ def _strip_fence(text: str) -> str:
         if len(lines) >= 3:
             return "\n".join(lines[1:-1]).strip()
     return value
+
+
+def _load_json_object(text: str) -> dict[str, Any]:
+    """Parse a JSON object, tolerating prose or fences around it."""
+    candidate = _strip_fence(text)
+    try:
+        value = json.loads(candidate)
+        if isinstance(value, dict):
+            return value
+    except json.JSONDecodeError:
+        pass
+    start = candidate.find("{")
+    end = candidate.rfind("}")
+    if start != -1 and end > start:
+        try:
+            value = json.loads(candidate[start : end + 1])
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError:
+            pass
+    raise ValueError("The model did not return a JSON object.")
 
 
 def _run_opencode(payload: dict[str, Any], prompt: str, *, model: str, timeout: int) -> str:
@@ -89,9 +121,14 @@ def _run_opencode(payload: dict[str, Any], prompt: str, *, model: str, timeout: 
 
         if result.returncode != 0:
             details = (result.stdout + "\n" + result.stderr).lower()
-            if "can't call models" in details or "cannot call models" in details:
+            if "free usage limit" in details or "freeusage" in details or "free-limit" in details:
                 message = (
-                    "The stored OpenCode Go key cannot call models. Reconnect the Go "
+                    "The free model has reached its usage limit. Wait for the limit to "
+                    "reset, or connect an OpenCode Go model, then retry --remote."
+                )
+            elif "can't call models" in details or "cannot call models" in details:
+                message = (
+                    "The stored OpenCode key cannot call models. Reconnect the Go "
                     "provider in OpenCode before using --remote."
                 )
             elif "can only be used from within opencode" in details:
@@ -128,26 +165,136 @@ def _required_text(candidate: dict[str, Any], field: str, max_length: int) -> st
     return value
 
 
-def suggest_stories(
+def _optional_text(candidate: dict[str, Any], field: str, max_length: int) -> str:
+    value = candidate.get(field)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"Model candidate field {field!r} must be text.")
+    return value.strip()[:max_length]
+
+
+# Fallback query words that describe the recurring shape of a builder story.
+_STOPWORDS = frozenset(
+    """
+    the a an and or but if then than that this these those for with without from into
+    over under about after before while during between because so not no yes do does did
+    done is are was were be been being have has had can could should would will just
+    also more most less very much many some any all one two three new old use used using
+    add adds added fix fixes fixed update updates updated file files code test tests
+    chore feat docs refactor build chore commit changed changes
+    """.split()
+)
+_WORD = re.compile(r"[A-Za-z][A-Za-z0-9+_-]{3,}")
+
+
+def fallback_queries(evidence: Sequence[Evidence], *, limit: int = MAX_QUERIES) -> list[str]:
+    """Derive plain search queries from work evidence without a model call."""
+    counts: dict[str, int] = {}
+    for item in evidence:
+        for word in _WORD.findall(f"{item.label} {item.excerpt[:600]}"):
+            lowered = word.lower().strip("-_")
+            if lowered in _STOPWORDS or len(lowered) < 4:
+                continue
+            counts[lowered] = counts.get(lowered, 0) + 1
+    ranked = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    queries: list[str] = []
+    top = [word for word, _ in ranked[:12]]
+    for index in range(0, min(len(top), limit * 2), 2):
+        pair = " ".join(top[index : index + 2])
+        if pair.strip():
+            queries.append(pair)
+        if len(queries) >= limit:
+            break
+    return queries
+
+
+def suggest_queries(
     evidence: Sequence[Evidence],
     *,
     model: str = DEFAULT_MODEL,
-    timeout: int = 180,
-) -> list[StoryCandidate]:
+    timeout: int = 120,
+) -> list[str]:
+    """Ask the model for research queries grounded in the work evidence."""
     if not evidence:
         return []
-    known_ids = {item.id for item in evidence}
     payload = {"evidence": _evidence_payload(evidence)}
     prompt = (
-        "Use only the attached evidence packet. Find zero to three specific story ideas "
-        "that are surprising, useful, or show a real decision or change. Do not invent "
-        "events, outcomes, audience reactions, research, or personal claims. Do not use "
-        "web research or imply the user read anything. Return no idea when the evidence "
-        "is weak. Each candidate must cite one or more exact evidence IDs from the packet. "
-        "Mark uncertainty in the rationale. Do not write or publish a finished post. "
-        "Return only strict JSON in this shape: "
-        '{"candidates":[{"title":"...","angle":"...","rationale":"...","audience":"...",'
-        '"evidence_ids":["..."],"confidence":0.0}]}'
+        "You are choosing research directions for one builder's public writing. "
+        "Read the attached work evidence, which comes from that builder's own project "
+        "files, commits, and agent conversations. "
+        "Propose up to five short web search queries that would find real, checkable "
+        "writing (essays, reports, news, documentation, research) that connects to the "
+        "concrete problem, decision, or change visible in the evidence. "
+        "Each query must be 2 to 5 plain keywords, not a sentence, with no site: "
+        "operator, no quotes, and no hypothetical wording. Prefer keywords a "
+        "professional would actually type into a search box. "
+        'Return only strict JSON: {"queries":["...","..."]}'
+    )
+    raw = _run_opencode(payload, prompt, model=model, timeout=timeout)
+    try:
+        document = _load_json_object(raw)
+    except ValueError:
+        return fallback_queries(evidence)
+    rows = document.get("queries")
+    if not isinstance(rows, list):
+        return fallback_queries(evidence)
+    queries = [str(row).strip() for row in rows if isinstance(row, str) and str(row).strip()]
+    cleaned = [query[:120] for query in queries if 2 <= len(query.split()) <= 8]
+    return cleaned[:MAX_QUERIES] or fallback_queries(evidence)
+
+
+def suggest_stories(
+    evidence: Sequence[Evidence],
+    research: Sequence[Evidence] = (),
+    *,
+    model: str = DEFAULT_MODEL,
+    timeout: int = 240,
+    warnings: list[str] | None = None,
+) -> list[StoryCandidate]:
+    """Return up to five evidence-backed ideas, optionally grounded in research."""
+    if not evidence:
+        return []
+    notes = warnings if warnings is not None else []
+    known_ids = {item.id for item in evidence}
+    research_by_url = {item.url: item for item in research if item.url}
+    payload = {
+        "work_evidence": _evidence_payload(evidence),
+        "research_evidence": _evidence_payload(research),
+    }
+    prompt = (
+        "You are the editor for one builder's public writing. Use ONLY the attached "
+        "evidence.\n"
+        "work_evidence comes from that builder's own projects: agent conversations, "
+        "commits, and notes.\n"
+        "research_evidence is fetched from the web. Its `url` field is the only "
+        "permitted citation.\n\n"
+        "Return zero to five ideas, best first. Quality beats count. Each idea must:\n"
+        "1. Be a specific new angle, not a summary of a document. Name the actual "
+        "moment, decision, tension, or change. Quote or closely paraphrase the "
+        "smallest phrase from the work evidence that proves it.\n"
+        "2. Separate `fact` (only what the evidence literally shows) from "
+        "`interpretation` (what you infer). Never blur them.\n"
+        "3. Set `evidence_ids` to ids that exist in work_evidence.\n"
+        "4. Use `research_urls` only for URLs that appear in research_evidence, and "
+        "only when the connection is concrete. If nothing genuinely fits, return an "
+        "empty list. A forced connection is worse than none.\n"
+        "5. Give one `channel_x` framing under 280 characters and one "
+        "`channel_linkedin` framing of two to four sentences.\n"
+        "6. Never invent outcomes, numbers, users, quotes, sources, or personal "
+        "claims. Never say the builder read something. Do not write the finished "
+        "post.\n"
+        "7. Prefer evidence whose source is \"agent\": that is the builder's own "
+        "working conversation. Project plans, product documents, and handoff notes "
+        "are supporting context only. An idea that mainly restates a planning or "
+        "product document is a summary, not a story. Drop it.\n"
+        "8. `fact` must describe something that happened: a bug, a change, a "
+        "measurement, a reaction. A statement of intent or a plan is not a fact.\n"
+        "Return no idea when the evidence is weak.\n"
+        'Return only strict JSON: {"candidates":[{"title":"...","angle":"...",'
+        '"rationale":"...","audience":"...","fact":"...","interpretation":"...",'
+        '"evidence_ids":["..."],"research_urls":[],"channel_x":"...",'
+        '"channel_linkedin":"...","confidence":0.0}]}'
     )
     response = _strip_fence(_run_opencode(payload, prompt, model=model, timeout=timeout))
     try:
@@ -179,6 +326,25 @@ def suggest_stories(
             raise ValueError("Candidate confidence must be a number from 0 to 1.")
         if not 0 <= float(confidence) <= 1:
             raise ValueError("Candidate confidence must be a number from 0 to 1.")
+
+        claimed_urls = row.get("research_urls")
+        if claimed_urls is None:
+            claimed_urls = []
+        if not isinstance(claimed_urls, list) or not all(isinstance(url, str) for url in claimed_urls):
+            raise ValueError("Candidate research_urls must be a list of URLs.")
+        verified: list[str] = []
+        invented: list[str] = []
+        for url in dict.fromkeys(url.strip() for url in claimed_urls):
+            if url and url in research_by_url:
+                verified.append(url)
+            elif url:
+                invented.append(url)
+        if invented:
+            notes.append(
+                f"dropped idea {title!r}: it cited {len(invented)} source(s) that were not fetched"
+            )
+            continue
+
         result.append(
             StoryCandidate(
                 title=title,
@@ -187,6 +353,11 @@ def suggest_stories(
                 audience=audience,
                 evidence_ids=evidence_ids,
                 confidence=float(confidence),
+                fact=_optional_text(row, "fact", 400),
+                interpretation=_optional_text(row, "interpretation", 400),
+                research_urls=tuple(verified),
+                channel_x=_optional_text(row, "channel_x", 400),
+                channel_linkedin=_optional_text(row, "channel_linkedin", 900),
             )
         )
     return result
