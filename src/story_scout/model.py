@@ -226,9 +226,9 @@ def suggest_queries(
         "Propose up to five short web search queries that would find real, checkable "
         "writing (essays, reports, news, documentation, research) that connects to the "
         "concrete problem, decision, or change visible in the evidence. "
-        "Each query must be 2 to 5 plain keywords, not a sentence, with no site: "
-        "operator, no quotes, and no hypothetical wording. Prefer keywords a "
-        "professional would actually type into a search box. "
+        "Each query must be 2 to 5 plain keywords. Name a general concept a stranger "
+        "would search for, never an internal function name, file name, or acronym from "
+        "the code. Use no site: operator, no quotes, and no hypothetical wording. "
         'Return only strict JSON: {"queries":["...","..."]}'
     )
     raw = _run_opencode(payload, prompt, model=model, timeout=timeout)

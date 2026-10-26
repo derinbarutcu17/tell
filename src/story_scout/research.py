@@ -108,15 +108,20 @@ def search(query: str, *, limit: int = 5, timeout: float = 10.0) -> list[SearchH
     text = (query or "").strip()
     if not text or limit <= 0:
         return []
+    return _gather(text, limit=limit, timeout=timeout)
+
+
+def _gather(query: str, *, limit: int, timeout: float) -> list[SearchHit]:
+    """Ask every provider, merge, dedupe, rank, and cut to the limit."""
     hits: list[SearchHit] = []
     for provider in (_search_hackernews, _search_arxiv, _search_duckduckgo):
         try:
-            hits.extend(provider(text, limit=limit, timeout=timeout))
+            hits.extend(provider(query, limit=limit, timeout=timeout))
         except Exception:
             continue
     if not hits:
         try:
-            hits.extend(_search_wikipedia(text, limit=limit, timeout=timeout))
+            hits.extend(_search_wikipedia(query, limit=limit, timeout=timeout))
         except Exception:
             pass
     if not hits:
@@ -129,7 +134,7 @@ def search(query: str, *, limit: int = 5, timeout: float = 10.0) -> list[SearchH
             continue
         seen.add(key)
         unique.append(hit)
-    return _rank_hits(unique, text)[:limit]
+    return _rank_hits(unique, query)[:limit]
 
 
 def _search_hackernews(query: str, *, limit: int, timeout: float) -> list[SearchHit]:
