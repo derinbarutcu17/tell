@@ -241,6 +241,11 @@ class Store:
         for item in evidence_items:
             record = _evidence_dict(item)
             evidence_by_id[record["id"]] = record
+        research_by_url = {
+            record["url"]: record
+            for record in evidence_by_id.values()
+            if record.get("url")
+        }
 
         result_ids: list[int] = []
         with self._connection() as conn:
@@ -272,6 +277,7 @@ class Store:
                     ),
                 )
                 story_id = int(cursor.lastrowid)
+                stored_ids: set[str] = set()
                 for evidence_id in data["evidence_ids"]:
                     record = evidence_by_id.get(evidence_id)
                     if record is None:
@@ -288,30 +294,41 @@ class Store:
                             "source": None,
                             "url": None,
                         }
-                    conn.execute(
-                        """
-                        INSERT INTO story_evidence
-                        (story_id, evidence_id, label, kind, excerpt, date,
-                         local_path, "commit", line_start, line_end, source, url)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            story_id,
-                            record["id"],
-                            record["label"],
-                            record["kind"],
-                            record["excerpt"],
-                            record["date"],
-                            record["local_path"],
-                            record["commit"],
-                            record["line_start"],
-                            record["line_end"],
-                            record["source"],
-                            record["url"],
-                        ),
-                    )
+                    self._insert_evidence(conn, story_id, record)
+                    stored_ids.add(str(record["id"]))
+                for url in data["research_urls"]:
+                    record = research_by_url.get(url)
+                    if record is None or str(record["id"]) in stored_ids:
+                        continue
+                    self._insert_evidence(conn, story_id, record)
+                    stored_ids.add(str(record["id"]))
                 result_ids.append(story_id)
         return result_ids
+
+    @staticmethod
+    def _insert_evidence(conn: sqlite3.Connection, story_id: int, record: dict[str, Any]) -> None:
+        conn.execute(
+            """
+            INSERT INTO story_evidence
+            (story_id, evidence_id, label, kind, excerpt, date,
+             local_path, "commit", line_start, line_end, source, url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                story_id,
+                record["id"],
+                record["label"],
+                record["kind"],
+                record["excerpt"],
+                record["date"],
+                record["local_path"],
+                record["commit"],
+                record["line_start"],
+                record["line_end"],
+                record["source"],
+                record["url"],
+            ),
+        )
 
     def _row_to_story(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         story_id = int(row["id"])

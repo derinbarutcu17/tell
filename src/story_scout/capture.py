@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from story_scout.models import Evidence
+from story_scout.redact import redact
 
 MAX_SESSIONS = 8
 MAX_TURNS_PER_SESSION = 24
@@ -34,35 +34,6 @@ SKIP_MESSAGE_TYPES = frozenset(
         "compaction",
     }
 )
-
-_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"\b(?:sk|ghp|gho|ghu|ghs|github_pat|xoxb|xoxp|xoxa)[-_][A-Za-z0-9_\-]{10,}"), "[redacted-secret]"),
-    (re.compile(r"\bAKIA[0-9A-Z]{12,}\b"), "[redacted-secret]"),
-    (
-        re.compile(
-            r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|"
-            r"password|passwd|secret|token)\b\s*[:=]\s*[\"']?[^\s\"',}]{6,}"
-        ),
-        r"\1=[redacted]",
-    ),
-    (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{10,}"), "Bearer [redacted]"),
-    (re.compile(r"(?i)\b-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}[\s\S]*?-{5}END [A-Z ]*PRIVATE KEY-{5}"), "[redacted-private-key]"),
-)
-
-_HOME_PATTERN = re.compile(rb"/(?:Users|home)/[A-Za-z0-9._-]+")
-_HOME_TEXT_PATTERN = re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+")
-
-
-def redact(text: str) -> str:
-    """Remove credential-shaped strings and absolute home paths from text."""
-    if not text:
-        return ""
-    cleaned = text
-    for pattern, replacement in _SECRET_PATTERNS:
-        cleaned = pattern.sub(replacement, cleaned)
-    cleaned = _HOME_TEXT_PATTERN.sub("~", cleaned)
-    return cleaned
-
 
 def default_database_paths() -> list[Path]:
     """Return candidate OpenCode session databases, most likely first."""

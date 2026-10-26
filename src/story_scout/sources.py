@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from story_scout.models import Evidence
+from story_scout.redact import redact
 
 TEXT_EXTENSIONS = {".md", ".txt", ".rst"}
 PER_FILE_LIMIT = 12_000
@@ -182,7 +183,7 @@ def collect_evidence(source_paths, *, days=7, now=None):
             if changed:
                 excerpt_lines.append("changed files:")
                 excerpt_lines.extend(changed)
-            excerpt = "\n".join(excerpt_lines)
+            excerpt = redact("\n".join(excerpt_lines))
             budget = TOTAL_LIMIT - total_chars
             if budget <= 0:
                 omissions.append(f"omitted additional Git evidence: total character limit ({TOTAL_LIMIT})")
@@ -320,7 +321,7 @@ def collect_evidence(source_paths, *, days=7, now=None):
                 id=eid,
                 label=rel,
                 kind=kind,
-                excerpt=text,
+                excerpt=redact(text),
                 date=None,
                 local_path=str(full),
                 commit=None,
