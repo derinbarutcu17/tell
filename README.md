@@ -12,7 +12,7 @@ From this directory:
     ./story-scout scan --days 7 --remote
     ./story-scout dashboard
 
-The dashboard is a local macOS-style window served on `127.0.0.1:8765`. It shows the inbox, keeps or rejects ideas, registers folders, and checks the model provider. Stop it with Ctrl+C.
+The dashboard is a self-hosted web app served on `127.0.0.1:8765`. It shows the inbox, keeps or rejects ideas, registers folders, and checks the model provider. Stop it with Ctrl+C.
 
 The same work is available from the command line:
 

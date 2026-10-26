@@ -17,10 +17,9 @@
 
   body {
     margin: 0;
-    padding: 16px;
     overflow: hidden;
-    background: #ececee;
-    color: #1b1b1f;
+    background: #f5f6f8;
+    color: #16181d;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
     font-size: 13px;
     line-height: 1.4;
@@ -30,85 +29,66 @@
   button, input, select { font-family: inherit; }
 
   :focus-visible {
-    outline: 2px solid #0a84ff;
+    outline: 2px solid #0a6ee0;
     outline-offset: 1px;
   }
 
-  .window {
+  .app-shell {
     display: flex;
-    flex-direction: column;
-    height: calc(100vh - 32px);
-    height: calc(100dvh - 32px);
+    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
-    background: #fff;
-    border-radius: 10px;
-    box-shadow: 0 12px 34px rgba(0, 0, 0, .16), 0 0 0 .5px rgba(0, 0, 0, .12);
   }
 
-  /* ---------- titlebar ---------- */
+  /* ---------- brand ---------- */
 
-  .titlebar {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    flex: 0 0 44px;
-    height: 44px;
-    padding: 0 14px;
-    background: #f7f7f8;
-    user-select: none;
-  }
-
-  .lights {
+  .brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
+    padding: 20px 16px 18px;
   }
 
-  .dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
+  .brand-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: linear-gradient(160deg, #0a6ee0, #0b4c96);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
   }
 
-  .dot.close { background: #ff5f57; }
-  .dot.min { background: #febc2e; }
-  .dot.zoom { background: #28c840; }
-
-  .appname {
-    font-size: 13px;
-    font-weight: 600;
-    color: #6e6e73;
-    letter-spacing: .01em;
+  .brand-name {
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    color: #16181d;
   }
 
-  .titlebar-tail { height: 12px; }
+  .brand-sub {
+    margin-top: 1px;
+    font-size: 10.5px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #8b8f98;
+  }
 
   /* ---------- shell ---------- */
 
-  .shell {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-  }
-
   .sidebar {
     display: flex;
-    flex: 0 0 200px;
+    flex: 0 0 216px;
     flex-direction: column;
     min-height: 0;
-    padding: 12px 10px;
-    background: #f2f2f4;
-    border-right: 1px solid #e3e3e6;
-  }
-
-  .section-label {
-    padding: 2px 10px 8px;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    color: #8a8a8e;
+    padding: 0 10px 14px;
+    background: #fff;
+    border-right: 1px solid #e4e6ea;
   }
 
   .nav {
@@ -123,18 +103,23 @@
     border: 0;
     border-radius: 6px;
     background: transparent;
-    color: #1b1b1f;
+    color: #2b2e35;
     font-size: 13px;
     text-align: left;
     cursor: pointer;
   }
 
-  .nav-row:hover { background: #e7e7ea; }
-  .nav-row.is-on { background: #dcdce1; font-weight: 500; }
+  .nav-row:hover { background: #f2f4f7; }
+  .nav-row.is-on {
+    background: #eef4fd;
+    color: #0a55b0;
+    font-weight: 600;
+  }
 
   .sidebar-foot {
     margin-top: auto;
     padding-top: 12px;
+    border-top: 1px solid #eef0f3;
   }
 
   .sidebar-note {
@@ -220,8 +205,9 @@
 
   .toolbar h1 {
     margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -.015em;
     white-space: nowrap;
   }
 
@@ -321,9 +307,15 @@
   .view {
     flex: 1;
     min-height: 0;
-    padding: 18px 20px 24px;
+    padding: 20px 24px 32px;
     overflow-y: auto;
     overflow-x: hidden;
+  }
+
+  .view > * {
+    max-width: 1040px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   /* ---------- idea cards ---------- */
@@ -357,7 +349,7 @@
 
   .idea-idx {
     margin-top: 3px;
-    color: #a1a1a6;
+    color: #6f7480;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     font-size: 11px;
   }
@@ -386,6 +378,7 @@
 
   .idea-angle {
     margin: 6px 0 0;
+    max-width: 74ch;
     color: #3c3c43;
     font-size: 13px;
     line-height: 1.45;
@@ -419,7 +412,7 @@
 
   .blk-label {
     margin-bottom: 5px;
-    color: #8a8a8e;
+    color: #6f7480;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: .07em;
@@ -700,73 +693,142 @@
   /* ---------- responsive ---------- */
 
   @media (max-width: 820px) {
-    body { padding: 0; }
-    .window {
-      height: 100vh;
-      height: 100dvh;
-      border-radius: 0;
-      box-shadow: none;
-    }
-    .sidebar { flex-basis: 176px; }
-    .view { padding: 16px 16px 20px; }
+    .sidebar { flex-basis: 186px; }
+    .view { padding: 16px 16px 24px; }
     .toolbar { padding: 0 16px; }
   }
 
   @media (max-width: 700px) {
-    .split, .frames { grid-template-columns: 1fr; }
-    .sidebar { flex-basis: 150px; }
-    .toolbar-right { gap: 6px; }
+    html, body { overflow-x: hidden; }
+    .app-shell { flex-direction: column; }
+    .app-shell, .content, .view, .idea,
+    .split, .frames, .idea-head, .research, .idea-foot, .evidence {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .view > * { max-width: 100%; }
+    .idea-title, .idea-angle, .blk-body, .frame-body, .fk-body {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .sidebar {
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px 10px;
+      overflow: visible;
+      border-right: 0;
+      border-bottom: 1px solid #e4e6ea;
+    }
+    .brand { flex: 0 0 auto; padding: 0 4px 0 0; }
+    .brand-sub { display: none; }
+    .nav { flex: 1 1 auto; flex-direction: row; overflow-x: auto; }
+    .nav-row { width: auto; white-space: nowrap; }
+    .sidebar-foot {
+      order: 3;
+      flex: 1 1 100%;
+      margin: 0;
+      padding: 8px 0 0;
+      border-top: 0;
+    }
+    .sidebar-note { display: none; }
+    .btn.block { width: 100%; }
+    .toolbar {
+      flex-wrap: wrap;
+      height: auto;
+      min-height: 0;
+      padding: 12px 16px;
+      gap: 10px;
+    }
+    .toolbar h1 { flex: 1 1 auto; font-size: 18px; }
+    .toolbar-right {
+      flex: 1 1 100%;
+      justify-content: flex-start;
+      gap: 8px;
+      min-width: 0;
+    }
+    .segment { overflow-x: auto; max-width: 100%; }
     .chip { display: none; }
+    .split, .frames { grid-template-columns: 1fr; }
+    .idea-foot { flex-wrap: wrap; gap: 8px; }
+    .evidence { flex-wrap: wrap; }
+    .view { padding: 16px 16px 24px; }
+  }
+  /* Narrow layout: brand + scan on one row, nav on its own full-width row. */
+  @media (max-width: 700px) {
+    .sidebar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-areas: "brand scan" "nav nav";
+      align-items: center;
+      gap: 8px 10px;
+      padding: 10px 16px;
+      flex-wrap: nowrap;
+    }
+    .brand { grid-area: brand; padding: 0; }
+    .nav {
+      grid-area: nav;
+      display: flex;
+      flex-direction: row;
+      gap: 4px;
+      width: 100%;
+      overflow-x: auto;
+    }
+    .nav-row { width: auto; padding: 7px 10px; }
+    .segment { padding: 2px; }
+    .sidebar-foot {
+      grid-area: scan;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      flex: 0 0 auto;
+    }
+    .btn.block { width: auto; padding: 7px 12px; }
   }
 </style>
 </head>
 <body>
-<div class="window">
-  <header class="titlebar">
-    <div class="lights" aria-hidden="true">
-      <span class="dot close"></span>
-      <span class="dot min"></span>
-      <span class="dot zoom"></span>
-    </div>
-    <div class="appname">Tell</div>
-    <div class="titlebar-tail"></div>
-  </header>
-
-  <div class="shell">
-    <aside class="sidebar">
-      <div class="section-label">Tell</div>
-      <nav class="nav" id="nav" aria-label="Views">
-        <button type="button" class="nav-row is-on" data-view="inbox" aria-current="page">Inbox</button>
-        <button type="button" class="nav-row" data-view="sources">Sources</button>
-        <button type="button" class="nav-row" data-view="settings">Settings</button>
-      </nav>
-      <div class="sidebar-foot">
-        <button type="button" class="btn primary block" id="scanBtn">Scan now</button>
-        <p class="sidebar-note">Reads your registered folders and agents</p>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">T</span>
+      <div>
+        <div class="brand-name">Tell</div>
+        <div class="brand-sub">Story discovery</div>
       </div>
-    </aside>
+    </div>
+    <nav class="nav" id="nav" aria-label="Views">
+      <button type="button" class="nav-row is-on" data-view="inbox" aria-current="page">Inbox</button>
+      <button type="button" class="nav-row" data-view="sources">Sources</button>
+      <button type="button" class="nav-row" data-view="settings">Settings</button>
+    </nav>
+    <div class="sidebar-foot">
+      <button type="button" class="btn primary block" id="scanBtn">Scan now</button>
+      <p class="sidebar-note">Reads only your registered folders and agent sessions.</p>
+    </div>
+  </aside>
 
-    <main class="content">
-      <div class="toolbar">
-        <h1 id="viewTitle">Inbox</h1>
-        <div class="toolbar-right">
-          <span class="chip" id="countChip">&mdash;</span>
-          <div class="segment" id="segment" role="group" aria-label="Filter ideas">
-            <button type="button" class="segbtn is-on" data-filter="all" aria-pressed="true">All</button>
-            <button type="button" class="segbtn" data-filter="new" aria-pressed="false">New</button>
-            <button type="button" class="segbtn" data-filter="kept" aria-pressed="false">Kept</button>
-            <button type="button" class="segbtn" data-filter="rejected" aria-pressed="false">Rejected</button>
-          </div>
+  <main class="content">
+    <div class="toolbar">
+      <h1 id="viewTitle">Inbox</h1>
+      <div class="toolbar-right">
+        <span class="chip" id="countChip">&mdash;</span>
+        <div class="segment" id="segment" role="group" aria-label="Filter ideas">
+          <button type="button" class="segbtn is-on" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" class="segbtn" data-filter="new" aria-pressed="false">New</button>
+          <button type="button" class="segbtn" data-filter="kept" aria-pressed="false">Kept</button>
+          <button type="button" class="segbtn" data-filter="rejected" aria-pressed="false">Rejected</button>
         </div>
       </div>
+    </div>
 
-      <div class="progress" id="progress" hidden><i></i></div>
-      <div class="error" id="errorLine" role="alert" hidden></div>
-      <div class="log" id="logBox" hidden><div id="logLines"></div></div>
+    <div class="progress" id="progress" hidden><i></i></div>
+    <div class="error" id="errorLine" role="alert" hidden></div>
+    <div class="log" id="logBox" hidden><div id="logLines"></div></div>
 
-      <div class="view" id="view"></div>
-    </main>
-  </div>
+    <div class="view" id="view"></div>
+  </main>
 </div>
 
 <noscript>
@@ -1126,6 +1188,7 @@
     if (pct !== null) {
       var pill = el("span", "conf", pct + "%");
       pill.title = "Confidence";
+      pill.setAttribute("aria-label", "Confidence " + pct + " percent");
       head.appendChild(pill);
     }
     card.appendChild(head);

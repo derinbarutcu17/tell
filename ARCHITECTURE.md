@@ -40,7 +40,7 @@ StoryCandidate fields:
 - `model.py` calls OpenCode and parses strict JSON. It sends only public evidence fields, checks evidence IDs, ignores any citation the model supplies, enforces the free-model allowlist, and answers a connection probe.
 - `pipeline.py` is the single scan path shared by the CLI and the dashboard.
 - `server.py` serves the local dashboard on 127.0.0.1 and exposes a small JSON API. Scan runs in one background job with a pollable log.
-- `dashboard_assets/index.html` is the self-contained dashboard UI. No CDN, no framework, no innerHTML with data.
+- `dashboard_assets/index.html` is the self-contained dashboard UI for the self-hosted web app. No CDN, no framework, no innerHTML with data.
 - `store.py` owns the SQLite schema and CRUD, including schema migration and settings.
 - `render.py` writes one self-contained HTML inbox with escaped text and http/https links only.
 - `cli.py` wires commands and keeps preview local unless `--remote` is present.
