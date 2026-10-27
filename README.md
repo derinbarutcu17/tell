@@ -1,5 +1,11 @@
 # Tell
 
+> **Status: experiment, parked on 2026-10-27.**
+>
+> Tell proved that local capture, evidence-linked ideas, and verified citations can work without a cloud service. It did not prove the ideas are worth posting. In the only real run, every candidate was too self-referential for a stranger to follow, because the material was the story of building Tell itself rather than a project with a public introduction.
+>
+> The daily X idea task now lives in Hermes as a skill. This repository stays as a reference implementation, not an active product. Nothing is scheduled from here.
+
 Tell finds the stories hiding in your everyday work and turns them into posts worth sharing.
 
 It reads the agent conversations, Git history, and notes from project folders you register, fetches real sources to give the idea a perspective, and shows the result as a local HTML inbox. You decide what to keep. Nothing is published.
@@ -61,3 +67,19 @@ Only folders you register are scanned. Tell reads Git metadata, recently changed
     PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 No package dependencies are required.
+
+## Findings
+
+What worked:
+
+- Capture from OpenCode session tables, with subagent chatter skipped and credentials redacted before storage or any model call.
+- Per-idea research. The model names the perspective it needs, Tell fetches that query, and a source is attached only when the fetched page shares content words with the idea. Six of ten stored ideas carried a verified citation.
+- The fact versus interpretation split. It kept the output honest at no cost.
+
+What did not work:
+
+- The ideas were obscure. Every candidate quoted an internal detail of building Tell, so a reader with no context could not follow any of them.
+- There is no project narrative input. Agent logs and commits never carry the "what this is, why it exists" a stranger needs first.
+- The dashboard was never opened after the first look, and zero ideas were kept.
+
+Conclusion carried forward: the citation gate and the fact/interpretation split are worth keeping. The application around them is not.

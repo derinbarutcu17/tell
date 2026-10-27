@@ -1,6 +1,6 @@
 # Tell build plan
 
-Status: Phase 0, Phase 1, Phase 2, and Phase 3 are implemented and verified on 2026-10-26. Phase 2's forced-connection gate exists as a word-overlap threshold plus weak-host refusal, not as a semantic check. Phase 3 added the dashboard app, keep/reject from the UI, per-idea research, and a provider connection check. Phase 4 (scheduling, delete-a-project command) is not started.
+Status: experiment, parked on 2026-10-27. Phases 0 to 3 were built and verified. The product question was answered negatively: ideas drawn from the builder's own agent logs were too self-referential for a stranger to follow. Phase 4 is cancelled. The repo is kept as a reference implementation; the daily idea task moved to a Hermes skill.
 
 Target: the version described in `IDEA.md`. Capture runs while I work. Small dashboard. Research-backed angles. X and LinkedIn.
 
